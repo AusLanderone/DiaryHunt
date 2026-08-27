@@ -227,6 +227,49 @@ tr.totals td.text { color: var(--muted); letter-spacing: 0.06em; text-transform:
 }
 canvas { display: block; width: 100%; }
 
+/* breakdown panels (profit by ticker / direction / tag / day) */
+.panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+@media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+}
+.panel h3 {
+  margin: 0 0 8px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.brow {
+  display: grid;
+  grid-template-columns: minmax(84px, 148px) 1fr 108px;
+  gap: 14px; align-items: center;
+  padding: 8px 0;
+}
+.brow + .brow { border-top: 1px solid var(--line-soft); }
+.brow .bl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.brow .bl .name {
+  font-weight: 600; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.brow .bl .meta { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.brow .bar-track { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.brow .bar-fill { height: 100%; border-radius: 4px; min-width: 2px; }
+.brow .bar-fill.pos { background: var(--pos); }
+.brow .bar-fill.neg { background: var(--neg); }
+.brow .bv {
+  text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-weight: 600; font-size: 13px;
+}
+.brow .bv.pos { color: var(--pos); }
+.brow .bv.neg { color: var(--neg); }
+
 /* ---------- modal / form ---------- */
 .modal-backdrop {
   position: fixed; inset: 0;

@@ -1,0 +1,24 @@
+{
+  "name": "diaryhunt",
+  "version": "0.1.0",
+  "description": "Manual-entry arbitrage trade diary",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.diaryhunt.app",
+    "productName": "DiaryHunt",
+    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*"],
+    "win": {
+      "target": "portable",
+      "signAndEditExecutable": false
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

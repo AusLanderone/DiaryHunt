@@ -6,8 +6,8 @@ function el(tag, attrs = {}, children = []) {
 }
 const txt = (s) => document.createTextNode(s);
 
-function field(label, input) {
-  return el('label', {}, [txt(label), input]);
+function field(label, input, cls) {
+  return el('label', cls ? { class: cls } : {}, [txt(label), input]);
 }
 
 function pill(text, kind) {
@@ -47,9 +47,17 @@ function legInputs(title, leg, cfg) {
 async function openForm(trade, onSaved) {
   const F = window.format;
   const cfg = await window.api.config.get();
-  const t = trade || { openDate: '', closeDate: '', type: cfg.types[0], ticker: '',
-    tag: cfg.tags[0], usdRub: '', payout: 0, adjustment: 0, comment: '',
-    legs: [{}, {}] };
+  const all = await window.api.trades.list();
+  const last = all.length ? [...all].sort((a, b) => b.num - a.num)[0] : null;
+  const today = new Date().toISOString().slice(0, 10);
+
+  // New trades auto-prefill the auxiliary fields (editable): date = today,
+  // USD/RUB = last trade's rate, payout computed automatically.
+  const t = trade || {
+    openDate: today, closeDate: '', type: cfg.types[0], ticker: '', tag: cfg.tags[0],
+    usdRub: last ? last.usdRub : '', payout: 0, adjustment: 0, comment: '',
+    payoutAuto: true, payoutRate: 0.06, legs: [{}, {}],
+  };
 
   const openDate = el('input', { type: 'date', value: t.openDate || '' });
   const closeDate = el('input', { type: 'date', value: t.closeDate || '' });
@@ -57,13 +65,24 @@ async function openForm(trade, onSaved) {
   const ticker = el('input', { type: 'text', value: t.ticker || '', placeholder: 'напр. ED' });
   const tag = el('select'); cfg.tags.forEach((x) => tag.append(new Option(x, x))); tag.value = t.tag;
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
-  const payout = el('input', { type: 'number', step: 'any', value: t.payout ?? 0 });
+  const rate = el('input', { type: 'number', step: 'any', value: t.payoutRate != null ? t.payoutRate * 100 : 6 });
   const comment = el('textarea', {}, [txt(t.comment || '')]);
+
+  // payout with an "авто" toggle (computed estimate ↔ manual entry)
+  const payout = el('input', { type: 'number', step: 'any', value: t.payout ?? 0 });
+  const payoutAuto = el('input', { type: 'checkbox' });
+  payoutAuto.checked = trade ? !!t.payoutAuto : true; // existing trades default to manual
+  const autoToggle = el('label', { class: 'auto-toggle' }, [payoutAuto, txt('авто')]);
+  const payoutField = el('label', {}, [
+    txt('Пейаут / перелив ₽'),
+    el('div', { class: 'field-row' }, [payout, autoToggle]),
+  ]);
 
   const leg1 = legInputs('Нога 1', t.legs[0] || {}, cfg);
   const leg2 = legInputs('Нога 2', t.legs[1] || {}, cfg);
   const live = el('div', { class: 'live' });
 
+  const currentRate = () => (Number(rate.value) || 0) / 100;
   function draft() {
     return { usdRub: Number(usdRub.value) || 0, payout: Number(payout.value) || 0,
       adjustment: Number(t.adjustment) || 0, closeDate: closeDate.value,
@@ -77,9 +96,13 @@ async function openForm(trade, onSaved) {
   }
   const sc = (n) => (n == null ? '' : n > 0 ? 'pos' : n < 0 ? 'neg' : '');
   function recompute() {
-    const d = draft();
-    const c = window.calc.computeTrade(d);
-    const closed = window.calc.isClosed(d);
+    if (payoutAuto.checked) {
+      const est = window.calc.estimatePayout(draft(), currentRate());
+      payout.value = est == null ? '' : Math.round(est * 100) / 100;
+    }
+    payout.readOnly = payoutAuto.checked;
+    const c = window.calc.computeTrade(draft());
+    const closed = window.calc.isClosed(draft());
     live.innerHTML = '';
     live.append(
       item('Вход спред', F.fmtPct(c.entrySpread) || '—'),
@@ -89,8 +112,9 @@ async function openForm(trade, onSaved) {
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),
     );
   }
-  [usdRub, payout, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
+  [usdRub, rate, payout, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
     i.addEventListener('input', recompute));
+  payoutAuto.addEventListener('change', recompute);
 
   const save = el('button', { class: 'btn primary' }, [txt('Сохранить')]);
   const cancel = el('button', { class: 'btn ghost' }, [txt('Отмена')]);
@@ -98,12 +122,13 @@ async function openForm(trade, onSaved) {
   const backdrop = el('div', { class: 'modal-backdrop' }, [
     el('div', { class: 'modal' }, [
       el('h2', {}, [txt(trade ? `Сделка №${trade.num}` : 'Новая сделка')]),
-      el('p', { class: 'hint' }, [txt('Оставьте «Цену выхода» и «Дату закрытия» пустыми — сделка сохранится как открытая.')]),
+      el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
         field('Тип', type), field('Тикер', ticker),
         field('Тег', tag), field('Курс USD/RUB', usdRub),
-        field('Пейаут / перелив ₽', payout), field('Комментарий', comment),
+        field('Ставка пейаута, %', rate), payoutField,
+        field('Комментарий', comment, 'full'),
       ]),
       leg1.box, leg2.box,
       live,
@@ -121,6 +146,7 @@ async function openForm(trade, onSaved) {
       openDate: openDate.value, closeDate: closeDate.value, type: type.value,
       ticker: ticker.value.trim(), tag: tag.value, usdRub: Number(usdRub.value) || 0,
       payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
+      payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: [leg1.read(), leg2.read()],
     };
     if (trade) await window.api.trades.update(trade.id, payload);

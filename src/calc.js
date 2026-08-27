@@ -77,6 +77,25 @@ function isClosed(trade) {
   return Boolean(trade.closeDate) && trade.legs.every(hasExit);
 }
 
+// Estimated payout ("Пейаут/перелив"): a MOEX-side tax/rebate approximation.
+// The exact figure comes from the MOEX platform; this preview is close.
+// rate is a fraction (e.g. 0.06). Returns ₽, or null if the MOEX leg is unclosed.
+// - MOEX leg in profit  -> taxed: payout = -rate * (MOEX gross $ * usdRub)
+// - MOEX leg in loss    -> rebate on transferring the other legs' profit back to
+//                          MOEX: payout = +rate * (other legs' profit $ * usdRub)
+function estimatePayout(trade, rate) {
+  const usd = Number(trade.usdRub) || 0;
+  const moex = trade.legs.find((l) => l.exchange === 'MOEX');
+  if (!moex) return null;
+  const g = legGross(moex);
+  if (g === null) return null;
+  if (g > 0) return -rate * g * usd;
+  const otherProfit = trade.legs
+    .filter((l) => l !== moex)
+    .reduce((s, l) => { const lg = legGross(l); return s + (lg && lg > 0 ? lg : 0); }, 0);
+  return rate * otherProfit * usd;
+}
+
 function computeTrade(trade) {
   return {
     legs: trade.legs.map((leg) => ({
@@ -101,7 +120,7 @@ const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
   grossTotal, feeTotalRub, pnlNet, pnlRub, pnlNetPct, netProfitRub,
-  isClosed, computeTrade,
+  isClosed, computeTrade, estimatePayout,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.calc = _api;

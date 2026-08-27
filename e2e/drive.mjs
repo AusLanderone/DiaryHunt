@@ -110,14 +110,14 @@ try {
   await page.evaluate(() => document.querySelector('#tab-journal').click());
   await page.evaluate(() => document.querySelector('#btn-add').click());
   await page.waitForSelector('.modal', { timeout: 8000 });
-  const live = await page.evaluate((t) => {
+  const res = await page.evaluate((t) => {
     const setVal = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
-    const grid = document.querySelector('.modal > .grid');
-    const dates = grid.querySelectorAll('input[type=date]');
-    setVal(dates[0], t.openDate); setVal(dates[1], t.closeDate);
-    setVal(grid.querySelector('input[type=text]'), t.ticker);
-    const nums = grid.querySelectorAll('input[type=number]');
-    setVal(nums[0], t.usdRub); setVal(nums[1], t.payout);
+    const byLabel = (re) => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => re.test(l.textContent))?.querySelector('input, select, textarea');
+    setVal(byLabel(/дата открытия/i), t.openDate);
+    setVal(byLabel(/дата закрытия/i), t.closeDate);
+    setVal(byLabel(/тикер/i), t.ticker);
+    setVal(byLabel(/курс/i), t.usdRub);
     const boxes = document.querySelectorAll('.leg-box');
     t.legs.forEach((leg, i) => {
       const box = boxes[i];
@@ -127,10 +127,19 @@ try {
       const [e, u, x, f] = box.querySelectorAll('input');
       setVal(e, leg.entryPrice); setVal(u, leg.units); setVal(x, leg.exitPrice); setVal(f, leg.feeRub);
     });
-    return document.querySelector('.live').innerText;
+    // payout is auto by default (6% MOEX tax estimate)
+    const autoPayout = document.querySelector('.field-row > input').value;
+    // switch to manual and pin the exact sheet value
+    const cb = document.querySelector('.auto-toggle input[type=checkbox]');
+    if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+    setVal(document.querySelector('.field-row > input'), t.payout);
+    return { autoPayout, manualLive: document.querySelector('.live').innerText };
   }, trade1);
   await page.screenshot({ path: path.join(SHOT, '04-form-live.png') });
-  check('form live line shows Чистый профит 1 044,40 ₽', norm(live).includes('044,40₽'), live);
+  check('form auto-payout estimates MOEX tax (≈ -295 ₽)',
+    Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
+  check('form manual payout override → Чистый профит 1 044,40 ₽',
+    norm(res.manualLive).includes('044,40₽'), res.manualLive);
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

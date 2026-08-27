@@ -79,3 +79,42 @@ test('computeTrade aggregates everything', () => {
   assert.strictEqual(c.closed, true);
   assert.strictEqual(c.legs.length, 2);
 });
+
+// --- estimatePayout: MOEX-side tax/rebate approximation ---
+const payProfit = {
+  usdRub: 83.70,
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 1.1505, units: 42000, exitPrice: 1.1519 },   // gross +58.80
+    { exchange: 'FOREX', side: 'Шорт', entryPrice: 1.15269, units: 40000, exitPrice: 1.15361 },
+  ],
+};
+const payLoss = {
+  usdRub: 84.95,
+  legs: [
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 65.76, units: 530, exitPrice: 66.57 },  // gross -429.30
+    { exchange: 'FOREX', side: 'Лонг', entryPrice: 65.269, units: 500, exitPrice: 66.149 }, // gross +440.00
+  ],
+};
+
+test('estimatePayout: MOEX-profit leg is taxed (negative)', () => {
+  near(calc.estimatePayout(payProfit, 0.06), -0.06 * 58.8 * 83.70, 0.5); // ≈ -295.3
+});
+
+test('estimatePayout: MOEX-loss leg rebates other legs profit (positive)', () => {
+  near(calc.estimatePayout(payLoss, 0.06), 0.06 * 440 * 84.95, 0.5); // ≈ +2242.7
+});
+
+test('estimatePayout: null when MOEX leg has no exit', () => {
+  const open = { usdRub: 80, legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 1, units: 1, exitPrice: null },
+    { exchange: 'FOREX', side: 'Шорт', entryPrice: 1, units: 1, exitPrice: 1 },
+  ] };
+  assert.strictEqual(calc.estimatePayout(open, 0.06), null);
+});
+
+test('estimatePayout: null when no MOEX leg present', () => {
+  assert.strictEqual(calc.estimatePayout({ usdRub: 80, legs: [
+    { exchange: 'BINANCE', side: 'Лонг', entryPrice: 1, units: 1, exitPrice: 2 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 1, units: 1, exitPrice: 1 },
+  ] }, 0.06), null);
+});

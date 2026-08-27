@@ -131,7 +131,7 @@ header {
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
 
-#view { padding: 16px 18px; overflow: auto; height: calc(100vh - 54px); }
+#view { padding: 0 18px 16px; overflow: auto; height: calc(100vh - 54px); }
 
 /* ---------- journal table ---------- */
 table { border-collapse: collapse; width: 100%; }
@@ -192,9 +192,8 @@ tr.state-open td:first-child { box-shadow: inset 3px 0 0 var(--open); }
 .pill.open { color: var(--open); background: rgba(230,180,68,.14); }
 .pill.closed { color: var(--pos); background: rgba(70,196,106,.14); }
 
-/* totals footer */
+/* totals footer — a normal trailing row so it never overlaps trades */
 tr.totals td {
-  position: sticky; bottom: 0;
   background: var(--surface-2);
   border-top: 2px solid var(--line);
   font-weight: 700;
@@ -212,7 +211,7 @@ tr.totals td.text { color: var(--muted); letter-spacing: 0.06em; text-transform:
 }
 
 /* ---------- stats ---------- */
-.metrics { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 22px; }
+.metrics { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 22px; }
 .metric {
   min-width: 168px;
   padding: 14px 18px;

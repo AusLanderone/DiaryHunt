@@ -16,10 +16,9 @@ function pill(text, kind) {
   return s;
 }
 
-function legInputs(title, leg, cfg) {
-  const ex = el('select');
-  cfg.exchanges.forEach((x) => ex.append(new Option(x, x)));
-  ex.value = leg.exchange || cfg.exchanges[0];
+function legInputs(title, leg, defaultEx) {
+  // editable exchange: type a new one or pick from the shared datalist
+  const ex = el('input', { type: 'text', list: 'dh-exlist', value: leg.exchange || defaultEx || '', placeholder: 'биржа ▾', autocomplete: 'off' });
   const side = el('select');
   ['Лонг', 'Шорт', 'Спот'].forEach((s) => side.append(new Option(s, s)));
   side.value = leg.side || 'Лонг';
@@ -36,7 +35,7 @@ function legInputs(title, leg, cfg) {
     ]),
   ]);
   return { box, read: () => ({
-    exchange: ex.value, side: side.value,
+    exchange: ex.value.trim(), side: side.value,
     entryPrice: entry.value === '' ? null : Number(entry.value),
     units: Number(units.value),
     exitPrice: exit.value === '' ? null : Number(exit.value),
@@ -61,11 +60,13 @@ async function openForm(trade, onSaved) {
 
   const openDate = el('input', { type: 'date', value: t.openDate || '' });
   const closeDate = el('input', { type: 'date', value: t.closeDate || '' });
-  const type = el('select'); cfg.types.forEach((x) => type.append(new Option(x, x))); type.value = t.type;
+  // editable type / tag / exchange — all backed by datalists, new values saved to config
+  const typeList = el('datalist', { id: 'dh-typelist' }, cfg.types.map((x) => new Option(x, x)));
+  const type = el('input', { type: 'text', list: 'dh-typelist', value: t.type || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
   const ticker = el('input', { type: 'text', value: t.ticker || '', placeholder: 'напр. ED' });
-  // editable tag: type a new one or pick an existing from the dropdown list
   const tagList = el('datalist', { id: 'dh-taglist' }, cfg.tags.map((x) => new Option(x, x)));
   const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
+  const exList = el('datalist', { id: 'dh-exlist' }, cfg.exchanges.map((x) => new Option(x, x)));
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
   const rate = el('input', { type: 'number', step: 'any', value: t.payoutRate != null ? t.payoutRate * 100 : 6 });
   const comment = el('textarea', {}, [txt(t.comment || '')]);
@@ -80,8 +81,8 @@ async function openForm(trade, onSaved) {
     el('div', { class: 'field-row' }, [payout, autoToggle]),
   ]);
 
-  const leg1 = legInputs('Нога 1', t.legs[0] || {}, cfg);
-  const leg2 = legInputs('Нога 2', t.legs[1] || {}, cfg);
+  const leg1 = legInputs('Нога 1', t.legs[0] || {}, cfg.exchanges[0] || '');
+  const leg2 = legInputs('Нога 2', t.legs[1] || {}, cfg.exchanges[1] || cfg.exchanges[0] || '');
   const live = el('div', { class: 'live' });
 
   const currentRate = () => (Number(rate.value) || 0) / 100;
@@ -127,11 +128,12 @@ async function openForm(trade, onSaved) {
       el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
-        field('Тип', type), field('Тикер', ticker),
+        el('label', {}, [txt('Тип'), type, typeList]), field('Тикер', ticker),
         el('label', {}, [txt('Тег'), tag, tagList]), field('Курс USD/RUB', usdRub),
         field('Ставка пейаута, %', rate), payoutField,
         field('Комментарий', comment, 'full'),
       ]),
+      exList,
       leg1.box, leg2.box,
       live,
       el('div', { class: 'modal-buttons' }, [cancel, save]),
@@ -144,10 +146,17 @@ async function openForm(trade, onSaved) {
       alert('Укажите тикер и количество единиц по обеим ногам.');
       return;
     }
+    // persist any newly-typed dictionary values so they appear next time
     const tagValue = tag.value.trim();
+    const typeValue = type.value.trim();
     if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
+    if (typeValue && !cfg.types.includes(typeValue)) await window.api.config.addItem('types', typeValue);
+    const seenEx = new Set(cfg.exchanges);
+    for (const l of [leg1.read(), leg2.read()]) {
+      if (l.exchange && !seenEx.has(l.exchange)) { await window.api.config.addItem('exchanges', l.exchange); seenEx.add(l.exchange); }
+    }
     const payload = {
-      openDate: openDate.value, closeDate: closeDate.value, type: type.value,
+      openDate: openDate.value, closeDate: closeDate.value, type: typeValue,
       ticker: ticker.value.trim(), tag: tagValue, usdRub: Number(usdRub.value) || 0,
       payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),

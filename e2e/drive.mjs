@@ -121,10 +121,10 @@ try {
     const boxes = document.querySelectorAll('.leg-box');
     t.legs.forEach((leg, i) => {
       const box = boxes[i];
-      const [exSel, sideSel] = box.querySelectorAll('select');
-      exSel.value = leg.exchange; exSel.dispatchEvent(new Event('input', { bubbles: true }));
+      const sideSel = box.querySelector('select'); // side is the only select now
       sideSel.value = leg.side; sideSel.dispatchEvent(new Event('input', { bubbles: true }));
-      const [e, u, x, f] = box.querySelectorAll('input');
+      const [ex, e, u, x, f] = box.querySelectorAll('input'); // [exchange, entry, units, exit, fee]
+      setVal(ex, leg.exchange);
       setVal(e, leg.entryPrice); setVal(u, leg.units); setVal(x, leg.exitPrice); setVal(f, leg.feeRub);
     });
     // payout is auto by default (6% MOEX tax estimate)

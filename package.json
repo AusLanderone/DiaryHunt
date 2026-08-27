@@ -1,0 +1,14 @@
+{
+  "name": "diaryhunt",
+  "version": "0.1.0",
+  "description": "Manual-entry arbitrage trade diary",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

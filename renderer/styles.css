@@ -131,7 +131,7 @@ header {
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
 
-#view { padding: 0 18px; overflow: auto; height: calc(100vh - 54px); }
+#view { padding: 0 18px; overflow: auto; max-height: calc(100vh - 54px); }
 
 /* ---------- journal table ---------- */
 table { border-collapse: collapse; width: 100%; }
@@ -192,11 +192,8 @@ tr.state-open td:first-child { box-shadow: inset 3px 0 0 var(--open); }
 .pill.open { color: var(--open); background: rgba(230,180,68,.14); }
 .pill.closed { color: var(--pos); background: rgba(70,196,106,.14); }
 
-/* journal: scrollable list + thin pinned total bar (no overlap, no empty gap) */
-.journal { display: flex; flex-direction: column; height: 100%; }
-.journal-scroll { flex: 1; overflow: auto; min-height: 0; }
+/* journal total: a compact bar right after the last trade */
 .journal-total {
-  flex: none;
   display: flex; justify-content: space-between; align-items: center;
   padding: 8px 14px;
   background: var(--surface-2);

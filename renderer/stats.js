@@ -99,6 +99,59 @@ function groupBy(trades, keyFn) {
   return [...map.values()];
 }
 
+// vertical bar chart: profit per group (day), green/red by sign
+function drawBars(canvas, groups) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth || 900;
+  const H = 260;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, W, H);
+  if (!groups.length) return;
+
+  const padL = 56, padR = 16, padTop = 18, padBot = 30;
+  const vals = groups.map((g) => g.profit);
+  const min = Math.min(0, ...vals), max = Math.max(0, ...vals);
+  const y = (v) => H - padBot - ((v - min) * (H - padTop - padBot)) / Math.max(1e-9, max - min);
+  const slot = (W - padL - padR) / groups.length;
+  const bw = Math.min(48, slot * 0.6);
+  const cx = (i) => padL + slot * i + slot / 2;
+  const pos = CSS('--pos') || '#46c46a';
+  const neg = CSS('--neg') || '#f26d78';
+  const line = CSS('--line') || '#262d38';
+  const muted = CSS('--muted') || '#8b95a6';
+  ctx.font = '10.5px "Cascadia Code", Consolas, monospace';
+
+  // Y axis: gridlines + ₽ labels
+  const TICKS = 4;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= TICKS; i++) {
+    const v = min + ((max - min) * i) / TICKS;
+    const yy = y(v);
+    ctx.strokeStyle = line; ctx.lineWidth = Math.abs(v) < 1e-9 ? 1.6 : 1;
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillStyle = muted; ctx.fillText(axisRub(v), padL - 8, yy);
+  }
+
+  // bars
+  const y0 = y(0);
+  groups.forEach((g, i) => {
+    const yv = y(g.profit);
+    ctx.fillStyle = g.profit >= 0 ? pos : neg;
+    ctx.fillRect(cx(i) - bw / 2, Math.min(yv, y0), bw, Math.max(1, Math.abs(yv - y0)));
+  });
+
+  // X axis: date labels (thinned when crowded)
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
+  const step = Math.max(1, Math.ceil(groups.length / 12));
+  groups.forEach((g, i) => {
+    if (i % step !== 0 && i !== groups.length - 1) return;
+    ctx.fillText(g.label, cx(i), H - padBot + 8);
+  });
+}
+
 function breakdownPanel(title, groups) {
   const F = window.format;
   const panel = el('div', 'panel');
@@ -171,9 +224,20 @@ function renderStats(container, trades) {
   const dates = closed.map((t) => t.closeDate);
   requestAnimationFrame(() => drawEquity(canvas, cumulative, dates));
 
-  // breakdowns
+  // profit by day — vertical bars
   const byDay = groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.label < b.label ? -1 : 1));
   byDay.forEach((g) => (g.label = ddmm(g.label)));
+  const dayTitle = el('div', 'chart-title');
+  dayTitle.textContent = 'Профит по дням, ₽';
+  dayTitle.style.marginTop = '22px';
+  container.appendChild(dayTitle);
+  const dayWrap = el('div', 'chart-wrap');
+  const dayCanvas = document.createElement('canvas');
+  dayWrap.appendChild(dayCanvas);
+  container.appendChild(dayWrap);
+  requestAnimationFrame(() => drawBars(dayCanvas, byDay));
+
+  // breakdowns
   const moexLeg = (t) => t.legs.find((l) => l.exchange === 'MOEX') || t.legs[0];
   const otherLeg = (t) => t.legs.find((l) => l !== moexLeg(t)) || t.legs[1] || t.legs[0];
   const byTicker = groupBy(closed, (t) => t.ticker).sort((a, b) => b.profit - a.profit);
@@ -187,7 +251,6 @@ function renderStats(container, trades) {
     breakdownPanel('Профит по направлению (нога MOEX)', byDirMoex),
     breakdownPanel('Профит по направлению (2-я нога)', byDirOther),
     breakdownPanel('Профит по тегу', byTag),
-    breakdownPanel('Профит по дням', byDay),
   );
   container.appendChild(panels);
 }

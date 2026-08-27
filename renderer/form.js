@@ -54,7 +54,7 @@ async function openForm(trade, onSaved) {
   // New trades auto-prefill the auxiliary fields (editable): date = today,
   // USD/RUB = last trade's rate, payout computed automatically.
   const t = trade || {
-    openDate: today, closeDate: '', type: cfg.types[0], ticker: '', tag: cfg.tags[0],
+    openDate: today, closeDate: '', type: cfg.types[0], ticker: '', tag: '',
     usdRub: last ? last.usdRub : '', payout: 0, adjustment: 0, comment: '',
     payoutAuto: true, payoutRate: 0.06, legs: [{}, {}],
   };
@@ -65,7 +65,7 @@ async function openForm(trade, onSaved) {
   const ticker = el('input', { type: 'text', value: t.ticker || '', placeholder: 'напр. ED' });
   // editable tag: type a new one or pick an existing from the dropdown list
   const tagList = el('datalist', { id: 'dh-taglist' }, cfg.tags.map((x) => new Option(x, x)));
-  const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'выбери или впиши свой' });
+  const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
   const rate = el('input', { type: 'number', step: 'any', value: t.payoutRate != null ? t.payoutRate * 100 : 6 });
   const comment = el('textarea', {}, [txt(t.comment || '')]);

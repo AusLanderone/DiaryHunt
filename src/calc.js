@@ -97,9 +97,11 @@ function computeTrade(trade) {
   };
 }
 
-module.exports = {
+const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
   grossTotal, feeTotalRub, pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade,
 };
+if (typeof module !== 'undefined' && module.exports) module.exports = _api;
+if (typeof window !== 'undefined') window.calc = _api;

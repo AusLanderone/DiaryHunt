@@ -3,8 +3,25 @@
 <head>
   <meta charset="UTF-8" />
   <title>DiaryHunt</title>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-  <h1>DiaryHunt</h1>
+  <header>
+    <button class="tab active" id="tab-journal">Журнал</button>
+    <button class="tab" id="tab-stats">Статистика</button>
+    <span style="flex:1"></span>
+    <button id="btn-add">+ Сделка</button>
+    <button class="secondary" id="btn-export">Экспорт CSV</button>
+  </header>
+  <div id="view"></div>
+
+  <script src="../src/calc.js"></script>
+  <script src="format.js"></script>
+  <script src="journal.js"></script>
+  <!-- Task 8: uncomment when form.js is created -->
+  <!-- <script src="form.js"></script> -->
+  <!-- Task 9: uncomment when stats.js is created -->
+  <!-- <script src="stats.js"></script> -->
+  <script src="app.js"></script>
 </body>
 </html>

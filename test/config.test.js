@@ -13,7 +13,7 @@ test('get seeds defaults on first use', () => {
   const d = cfg.get();
   assert.deepStrictEqual(d.exchanges, ['MOEX', 'FOREX']);
   assert.deepStrictEqual(d.types, ['Фьючи', 'Крипто', 'RWA']);
-  assert.ok(d.tags.includes('Схождение'));
+  assert.deepStrictEqual(d.tags, ['Схождение', 'Раскор']);
 });
 
 test('addItem appends and dedupes, persists', () => {
@@ -25,8 +25,12 @@ test('addItem appends and dedupes, persists', () => {
   assert.deepStrictEqual(reloaded.get().exchanges, ['MOEX', 'FOREX', 'BINANCE']);
 });
 
-test('removeItem drops a value', () => {
-  const cfg = createConfig({ dataDir: tmpDir() });
+test('removeItem drops a value and persists across instances', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.get(); // seed defaults to disk
   cfg.removeItem('tags', 'Раскор');
   assert.deepStrictEqual(cfg.get().tags, ['Схождение']);
+  const reloaded = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(reloaded.get().tags, ['Схождение']);
 });

@@ -6,12 +6,18 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
+    "e2e": "node e2e/drive.mjs",
     "dist": "electron-builder"
   },
   "build": {
     "appId": "com.diaryhunt.app",
     "productName": "DiaryHunt",
-    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*"],
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*"
+    ],
     "win": {
       "target": "portable",
       "signAndEditExecutable": false
@@ -19,6 +25,7 @@
   },
   "devDependencies": {
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "playwright-core": "^1.62.1"
   }
 }

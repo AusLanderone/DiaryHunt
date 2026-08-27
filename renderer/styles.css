@@ -245,6 +245,24 @@ tr.totals td.text { color: var(--muted); letter-spacing: 0.06em; text-transform:
 }
 canvas { display: block; width: 100%; }
 
+/* hover tooltip for charts */
+.chart-tip {
+  position: fixed; z-index: 100; display: none; pointer-events: none;
+  background: var(--elevated);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 11px;
+  font-size: 12.5px; color: var(--text);
+  box-shadow: 0 8px 24px rgba(0,0,0,.45);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.chart-tip b { font-weight: 600; margin-right: 8px; }
+.chart-tip .tv { font-family: var(--mono); font-weight: 600; }
+.chart-tip .tv.pos { color: var(--pos); }
+.chart-tip .tv.neg { color: var(--neg); }
+.chart-tip .tip-sub { margin-top: 2px; font-size: 11px; color: var(--muted); }
+
 /* breakdown panels (profit by ticker / direction / tag / day) */
 .panels {
   display: grid;

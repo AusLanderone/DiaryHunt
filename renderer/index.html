@@ -7,11 +7,19 @@
 </head>
 <body>
   <header>
-    <button class="tab active" id="tab-journal">Журнал</button>
-    <button class="tab" id="tab-stats">Статистика</button>
-    <span style="flex:1"></span>
-    <button id="btn-add">+ Сделка</button>
-    <button class="secondary" id="btn-export">Экспорт CSV</button>
+    <div class="brand">
+      <span class="brand-mark"></span>
+      DiaryHunt
+      <span class="brand-sub">арбитраж-дневник</span>
+    </div>
+    <div class="tabs">
+      <button class="tab active" id="tab-journal">Журнал</button>
+      <button class="tab" id="tab-stats">Статистика</button>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="btn-export">Экспорт CSV</button>
+      <button class="btn primary" id="btn-add">Добавить сделку</button>
+    </div>
   </header>
   <div id="view"></div>
 

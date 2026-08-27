@@ -91,7 +91,7 @@ try {
   await page.waitForSelector('table', { timeout: 10000 });
   await page.screenshot({ path: path.join(SHOT, '02-journal.png') });
   const journal = await page.evaluate(() => document.querySelector('#view').innerText);
-  const totalLine = journal.split('\n').find((l) => l.includes('ИТОГО')) || '';
+  const totalLine = journal.split('\n').find((l) => /итого/i.test(l)) || '';
   // total ≈ 1044.40 + 3923.97 = 4968.37 ₽ (may render 4968.36 — app sums raw
   // floats then rounds, vs summing already-rounded cents; ±1 kopeck is expected).
   const totalMatch = norm(totalLine).match(/(\d+),(\d{2})₽/);
@@ -103,7 +103,7 @@ try {
   await page.waitForTimeout(400);
   await page.screenshot({ path: path.join(SHOT, '03-stats.png') });
   const stats = await page.evaluate(() => document.querySelector('#view').innerText);
-  check('stats: 2 closed trades', /Всего сделок[^\d]*2/.test(stats.replace(/\n/g, ' ')), '');
+  check('stats: 2 closed trades', /закрытых сделок[^\d]*2/i.test(stats.replace(/\n/g, ' ')), '');
   check('stats: winrate 100.0%', norm(stats).includes('100.0%'));
 
   console.log('\n[4] form live recompute');

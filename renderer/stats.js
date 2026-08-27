@@ -174,14 +174,18 @@ function renderStats(container, trades) {
   // breakdowns
   const byDay = groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.label < b.label ? -1 : 1));
   byDay.forEach((g) => (g.label = ddmm(g.label)));
+  const moexLeg = (t) => t.legs.find((l) => l.exchange === 'MOEX') || t.legs[0];
+  const otherLeg = (t) => t.legs.find((l) => l !== moexLeg(t)) || t.legs[1] || t.legs[0];
   const byTicker = groupBy(closed, (t) => t.ticker).sort((a, b) => b.profit - a.profit);
-  const byDir = groupBy(closed, (t) => `${t.legs[0].exchange} ${t.legs[0].side}`).sort((a, b) => b.profit - a.profit);
+  const byDirMoex = groupBy(closed, (t) => `${moexLeg(t).exchange} ${moexLeg(t).side}`).sort((a, b) => b.profit - a.profit);
+  const byDirOther = groupBy(closed, (t) => `${otherLeg(t).exchange} ${otherLeg(t).side}`).sort((a, b) => b.profit - a.profit);
   const byTag = groupBy(closed, (t) => t.tag || '—').sort((a, b) => b.profit - a.profit);
 
   const panels = el('div', 'panels');
   panels.append(
     breakdownPanel('Профит по тикеру', byTicker),
-    breakdownPanel('Профит по направлению (нога MOEX)', byDir),
+    breakdownPanel('Профит по направлению (нога MOEX)', byDirMoex),
+    breakdownPanel('Профит по направлению (2-я нога)', byDirOther),
     breakdownPanel('Профит по тегу', byTag),
     breakdownPanel('Профит по дням', byDay),
   );

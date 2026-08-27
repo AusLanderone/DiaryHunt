@@ -33,5 +33,11 @@ document.getElementById('btn-export').onclick = async () => {
   const r = await window.api.exportCsv();
   if (r.saved) alert('Сохранено: ' + r.path);
 };
+document.getElementById('btn-settings').onclick = () => window.settings.openSettings();
 
+async function applySavedSettings() {
+  try { window.settings.applySettings(await window.api.config.getSettings()); } catch { /* defaults */ }
+}
+
+applySavedSettings();
 refresh();

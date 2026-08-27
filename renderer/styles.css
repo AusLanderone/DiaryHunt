@@ -23,6 +23,24 @@
   --sans: "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
 
+/* ---- color palettes (Настройки → Цветовая палитра) ---- */
+:root[data-theme="emerald"] { --accent: #2fbf71; --accent-dim: #25995a; }
+:root[data-theme="ocean"] {
+  --accent: #35b7cb; --accent-dim: #2792a3;
+  --bg: #0c1519; --surface: #122129; --surface-2: #16272f; --elevated: #1d323b;
+  --line: #21343d; --line-soft: #182831;
+}
+:root[data-theme="violet"] { --accent: #8b7bff; --accent-dim: #6f5ee0; }
+:root[data-theme="light"] {
+  --bg: #f4f6f9; --surface: #ffffff; --surface-2: #eef1f6; --elevated: #e3e9f1;
+  --line: #d9dfe8; --line-soft: #e8ebf1;
+  --text: #1a2230; --muted: #5b6675; --muted-2: #97a2b3;
+  --pos: #1a9c4b; --neg: #d64550; --open: #bd881c;
+  --accent: #2f6ae0; --accent-dim: #2456c0;
+}
+:root[data-theme="light"] .btn.primary { color: #fff; }
+:root[data-theme="light"] tbody tr:hover td { background: rgba(0,0,0,.03); }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body {

@@ -9,6 +9,12 @@ const DEFAULTS = {
   types: ['Фьючи', 'Крипто', 'RWA'],
 };
 
+const SETTINGS_DEFAULTS = {
+  font: 'system',   // system | grotesk | rounded | serif
+  theme: 'default', // default | emerald | ocean | violet | light
+  scale: 1,         // UI zoom factor
+};
+
 function createConfig({ dataDir }) {
   const file = path.join(dataDir, 'config.json');
 
@@ -45,7 +51,18 @@ function createConfig({ dataDir }) {
     write(data);
   }
 
-  return { get, addItem, removeItem };
+  function getSettings() {
+    return { ...SETTINGS_DEFAULTS, ...(read().settings || {}) };
+  }
+
+  function setSettings(patch) {
+    const data = read();
+    data.settings = { ...SETTINGS_DEFAULTS, ...(data.settings || {}), ...patch };
+    write(data);
+    return data.settings;
+  }
+
+  return { get, addItem, removeItem, getSettings, setSettings };
 }
 
 module.exports = { createConfig };

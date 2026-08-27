@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('config:get'),
     addItem: (kind, value) => ipcRenderer.invoke('config:addItem', kind, value),
     removeItem: (kind, value) => ipcRenderer.invoke('config:removeItem', kind, value),
+    getSettings: () => ipcRenderer.invoke('config:getSettings'),
+    setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
 });

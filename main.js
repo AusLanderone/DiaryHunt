@@ -21,6 +21,8 @@ function registerIpc() {
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
+  ipcMain.handle('config:getSettings', () => config.getSettings());
+  ipcMain.handle('config:setSettings', (_e, patch) => config.setSettings(patch));
   ipcMain.handle('export:csv', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath: 'diaryhunt-export.csv',

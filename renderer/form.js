@@ -63,7 +63,9 @@ async function openForm(trade, onSaved) {
   const closeDate = el('input', { type: 'date', value: t.closeDate || '' });
   const type = el('select'); cfg.types.forEach((x) => type.append(new Option(x, x))); type.value = t.type;
   const ticker = el('input', { type: 'text', value: t.ticker || '', placeholder: 'напр. ED' });
-  const tag = el('select'); cfg.tags.forEach((x) => tag.append(new Option(x, x))); tag.value = t.tag;
+  // editable tag: type a new one or pick an existing from the dropdown list
+  const tagList = el('datalist', { id: 'dh-taglist' }, cfg.tags.map((x) => new Option(x, x)));
+  const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'выбери или впиши свой' });
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
   const rate = el('input', { type: 'number', step: 'any', value: t.payoutRate != null ? t.payoutRate * 100 : 6 });
   const comment = el('textarea', {}, [txt(t.comment || '')]);
@@ -126,7 +128,7 @@ async function openForm(trade, onSaved) {
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
         field('Тип', type), field('Тикер', ticker),
-        field('Тег', tag), field('Курс USD/RUB', usdRub),
+        el('label', {}, [txt('Тег'), tag, tagList]), field('Курс USD/RUB', usdRub),
         field('Ставка пейаута, %', rate), payoutField,
         field('Комментарий', comment, 'full'),
       ]),
@@ -142,9 +144,11 @@ async function openForm(trade, onSaved) {
       alert('Укажите тикер и количество единиц по обеим ногам.');
       return;
     }
+    const tagValue = tag.value.trim();
+    if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
     const payload = {
       openDate: openDate.value, closeDate: closeDate.value, type: type.value,
-      ticker: ticker.value.trim(), tag: tag.value, usdRub: Number(usdRub.value) || 0,
+      ticker: ticker.value.trim(), tag: tagValue, usdRub: Number(usdRub.value) || 0,
       payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: [leg1.read(), leg2.read()],

@@ -34,3 +34,25 @@ test('removeItem drops a value and persists across instances', () => {
   const reloaded = createConfig({ dataDir: dir });
   assert.deepStrictEqual(reloaded.get().tags, ['Схождение']);
 });
+
+test('getSettings returns defaults, setSettings merges and persists', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(cfg.getSettings(), { font: 'system', theme: 'default', scale: 1 });
+  cfg.setSettings({ theme: 'ocean', scale: 1.1 });
+  const reloaded = createConfig({ dataDir: dir });
+  const s = reloaded.getSettings();
+  assert.strictEqual(s.theme, 'ocean');
+  assert.strictEqual(s.scale, 1.1);
+  assert.strictEqual(s.font, 'system'); // untouched default preserved
+});
+
+test('setSettings does not disturb dictionaries', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.addItem('tags', 'Пробой');
+  cfg.setSettings({ theme: 'violet' });
+  const reloaded = createConfig({ dataDir: dir });
+  assert.ok(reloaded.get().tags.includes('Пробой'));
+  assert.strictEqual(reloaded.getSettings().theme, 'violet');
+});

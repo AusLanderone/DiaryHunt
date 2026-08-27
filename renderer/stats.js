@@ -18,28 +18,45 @@ function metric(label, value, cls) {
 
 const CSS = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
-function drawEquity(canvas, points) {
+// compact ₽ label for the value axis: 39179 -> "39к", 1465 -> "1,5к"
+function axisRub(v) {
+  const a = Math.abs(v);
+  if (a >= 1000) return (v / 1000).toFixed(a >= 10000 ? 0 : 1).replace('.', ',') + 'к';
+  return String(Math.round(v));
+}
+
+function drawEquity(canvas, points, dates) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth || 900;
-  const H = 300;
+  const H = 320;
   canvas.width = W * dpr; canvas.height = H * dpr;
   canvas.style.height = H + 'px';
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, W, H);
   if (!points.length) return;
 
-  const padX = 14, padTop = 16, padBot = 22;
+  const padL = 56, padR = 16, padTop = 16, padBot = 30;
   const min = Math.min(0, ...points), max = Math.max(0, ...points);
-  const x = (i) => padX + (i * (W - 2 * padX)) / Math.max(1, points.length - 1);
+  const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, points.length - 1);
   const y = (v) => H - padBot - ((v - min) * (H - padTop - padBot)) / Math.max(1e-9, max - min);
   const pos = CSS('--pos') || '#46c46a';
   const line = CSS('--line') || '#262d38';
   const muted = CSS('--muted') || '#8b95a6';
+  ctx.font = '10.5px "Cascadia Code", Consolas, monospace';
 
-  ctx.strokeStyle = line; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(padX, y(0)); ctx.lineTo(W - padX, y(0)); ctx.stroke();
+  // Y axis: horizontal gridlines + ₽ value labels (vertical scale)
+  const TICKS = 4;
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  for (let i = 0; i <= TICKS; i++) {
+    const v = min + ((max - min) * i) / TICKS;
+    const yy = y(v);
+    ctx.strokeStyle = line; ctx.lineWidth = Math.abs(v) < 1e-9 ? 1.6 : 1;
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - padR, yy); ctx.stroke();
+    ctx.fillStyle = muted; ctx.fillText(axisRub(v), padL - 8, yy);
+  }
 
+  // area fill under the curve
   const grad = ctx.createLinearGradient(0, padTop, 0, H - padBot);
   grad.addColorStop(0, 'rgba(70,196,106,0.22)');
   grad.addColorStop(1, 'rgba(70,196,106,0.01)');
@@ -50,18 +67,23 @@ function drawEquity(canvas, points) {
   ctx.closePath();
   ctx.fillStyle = grad; ctx.fill();
 
+  // the line
   ctx.strokeStyle = pos; ctx.lineWidth = 2; ctx.lineJoin = 'round';
   ctx.beginPath();
   points.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
   ctx.stroke();
 
-  const lx = x(points.length - 1), ly = y(points[points.length - 1]);
+  // X axis: date labels (horizontal), thinned out when crowded
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
+  const step = Math.max(1, Math.ceil(points.length / 8));
+  for (let i = 0; i < points.length; i++) {
+    if (i % step !== 0 && i !== points.length - 1) continue;
+    ctx.fillText(ddmm(dates[i] || ''), x(i), H - padBot + 8);
+  }
+
+  // final point marker
   ctx.fillStyle = pos;
-  ctx.beginPath(); ctx.arc(lx, ly, 3.5, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = muted;
-  ctx.font = '11px "Cascadia Code", Consolas, monospace';
-  ctx.textAlign = 'right';
-  ctx.fillText(window.format.fmtRub(points[points.length - 1]), W - padX, Math.max(padTop + 4, ly - 8));
+  ctx.beginPath(); ctx.arc(x(points.length - 1), y(points[points.length - 1]), 3.5, 0, Math.PI * 2); ctx.fill();
 }
 
 // group closed trades by keyFn -> [{ label, profit, count, wins }]
@@ -146,7 +168,8 @@ function renderStats(container, trades) {
   container.appendChild(wrap);
   let cum = 0;
   const cumulative = profits.map((v) => (cum += v));
-  requestAnimationFrame(() => drawEquity(canvas, cumulative));
+  const dates = closed.map((t) => t.closeDate);
+  requestAnimationFrame(() => drawEquity(canvas, cumulative, dates));
 
   // breakdowns
   const byDay = groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.label < b.label ? -1 : 1));

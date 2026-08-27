@@ -131,7 +131,7 @@ header {
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 4px; }
 
-#view { padding: 0 18px 16px; overflow: auto; height: calc(100vh - 54px); }
+#view { padding: 0 18px; overflow: auto; height: calc(100vh - 54px); }
 
 /* ---------- journal table ---------- */
 table { border-collapse: collapse; width: 100%; }
@@ -192,14 +192,26 @@ tr.state-open td:first-child { box-shadow: inset 3px 0 0 var(--open); }
 .pill.open { color: var(--open); background: rgba(230,180,68,.14); }
 .pill.closed { color: var(--pos); background: rgba(70,196,106,.14); }
 
-/* totals footer — a normal trailing row so it never overlaps trades */
-tr.totals td {
+/* journal: scrollable list + thin pinned total bar (no overlap, no empty gap) */
+.journal { display: flex; flex-direction: column; height: 100%; }
+.journal-scroll { flex: 1; overflow: auto; min-height: 0; }
+.journal-total {
+  flex: none;
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 14px;
   background: var(--surface-2);
   border-top: 2px solid var(--line);
-  font-weight: 700;
-  padding: 10px 12px;
 }
-tr.totals td.text { color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; font-size: 11px; }
+.journal-total .lbl {
+  color: var(--muted); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+}
+.journal-total .val {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-weight: 700; font-size: 14px;
+}
+.journal-total .val.pos { color: var(--pos); }
+.journal-total .val.neg { color: var(--neg); }
 
 .row-actions { display: inline-flex; gap: 6px; }
 
@@ -267,7 +279,7 @@ canvas { display: block; width: 100%; }
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  margin-top: 22px;
+  margin: 22px 0 16px;
 }
 @media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
 .panel {

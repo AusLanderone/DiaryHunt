@@ -90,13 +90,12 @@ try {
   await page.reload();
   await page.waitForSelector('table', { timeout: 10000 });
   await page.screenshot({ path: path.join(SHOT, '02-journal.png') });
-  const journal = await page.evaluate(() => document.querySelector('#view').innerText);
-  const totalLine = journal.split('\n').find((l) => /итого/i.test(l)) || '';
   // total ≈ 1044.40 + 3923.97 = 4968.37 ₽ (may render 4968.36 — app sums raw
   // floats then rounds, vs summing already-rounded cents; ±1 kopeck is expected).
-  const totalMatch = norm(totalLine).match(/(\d+),(\d{2})₽/);
+  const totalTxt = await page.evaluate(() => document.querySelector('.journal-total .val')?.innerText || '');
+  const totalMatch = totalTxt.replace(/\s/g, '').match(/(\d+),(\d{2})/);
   const totalNum = totalMatch ? parseFloat(`${totalMatch[1]}.${totalMatch[2]}`) : NaN;
-  check('journal ИТОГО ≈ 4968.37 ₽ (±0.05)', near(totalNum, 4968.37, 0.05), `parsed ${totalNum} from "${totalLine.trim()}"`);
+  check('journal ИТОГО ≈ 4968.37 ₽ (±0.05)', near(totalNum, 4968.37, 0.05), `parsed ${totalNum} from "${totalTxt}"`);
 
   console.log('\n[3] stats');
   await page.evaluate(() => document.querySelector('#tab-stats').click());

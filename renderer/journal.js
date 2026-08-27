@@ -108,16 +108,25 @@ function renderJournal(container, trades, { onEdit, onDelete }) {
     });
   });
 
-  const totalTr = document.createElement('tr');
-  totalTr.className = 'totals';
-  totalTr.appendChild(td('Итого', 'text'));
-  for (let i = 1; i < 16; i++) totalTr.appendChild(td(''));
-  totalTr.appendChild(td(F.fmtRub(total), 'strong ' + signCls(total)));
-  totalTr.appendChild(td(''));
-  tbody.appendChild(totalTr);
-
   table.appendChild(tbody);
-  container.appendChild(table);
+
+  // scrollable trade list + a thin fixed total bar at the bottom
+  const scroll = document.createElement('div');
+  scroll.className = 'journal-scroll';
+  scroll.appendChild(table);
+
+  const foot = document.createElement('div');
+  foot.className = 'journal-total';
+  const lbl = document.createElement('span');
+  lbl.className = 'lbl'; lbl.textContent = 'Итого';
+  const val = document.createElement('span');
+  val.className = 'val ' + signCls(total); val.textContent = F.fmtRub(total);
+  foot.append(lbl, val);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'journal';
+  wrap.append(scroll, foot);
+  container.appendChild(wrap);
 }
 
 window.journal = { renderJournal };

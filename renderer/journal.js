@@ -29,7 +29,7 @@ function renderJournal(container, trades, { onEdit, onDelete }) {
 
   trades.forEach((trade) => {
     const c = window.calc.computeTrade(trade);
-    if (c.netProfitRub !== null) totalProfit += c.netProfitRub;
+    if (c.closed) totalProfit += c.netProfitRub;
     const openCls = c.closed ? '' : ' open';
 
     trade.legs.forEach((leg, i) => {

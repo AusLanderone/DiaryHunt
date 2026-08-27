@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
   trades: {
@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('api', {
     setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
+  setZoom: (factor) => webFrame.setZoomFactor(factor), // proper page zoom (fills viewport)
   db: {
     export: () => ipcRenderer.invoke('db:export'),
     import: () => ipcRenderer.invoke('db:import'),

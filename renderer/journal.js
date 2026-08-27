@@ -109,9 +109,12 @@ function renderJournal(container, trades, { onEdit, onDelete }) {
   });
 
   table.appendChild(tbody);
-  container.appendChild(table);
 
-  // compact total bar right after the last trade
+  // trade list fills the view and scrolls; a thin total bar is pinned at the bottom
+  const scroll = document.createElement('div');
+  scroll.className = 'journal-scroll';
+  scroll.appendChild(table);
+
   const foot = document.createElement('div');
   foot.className = 'journal-total';
   const lbl = document.createElement('span');
@@ -119,7 +122,11 @@ function renderJournal(container, trades, { onEdit, onDelete }) {
   const val = document.createElement('span');
   val.className = 'val ' + signCls(total); val.textContent = F.fmtRub(total);
   foot.append(lbl, val);
-  container.appendChild(foot);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'journal';
+  wrap.append(scroll, foot);
+  container.appendChild(wrap);
 }
 
 window.journal = { renderJournal };

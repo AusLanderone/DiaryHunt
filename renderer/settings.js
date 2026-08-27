@@ -35,7 +35,8 @@
     const root = document.documentElement;
     root.dataset.theme = s.theme || 'default';
     root.style.setProperty('--sans', FONTS[s.font] || FONTS.system);
-    document.body.style.zoom = String(s.scale || 1);
+    document.body.style.zoom = ''; // clear any legacy CSS zoom
+    if (window.api && window.api.setZoom) window.api.setZoom(s.scale || 1);
   }
 
   async function openSettings() {

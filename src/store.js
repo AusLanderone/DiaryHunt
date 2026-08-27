@@ -63,7 +63,12 @@ function createStore({ dataDir }) {
     write(read().filter((t) => t.id !== id));
   }
 
-  return { list, get, add, update, remove };
+  // Bulk replace (used by DB import). Backs up the current file first.
+  function replaceAll(trades) {
+    write(Array.isArray(trades) ? trades : []);
+  }
+
+  return { list, get, add, update, remove, replaceAll };
 }
 
 module.exports = { createStore };

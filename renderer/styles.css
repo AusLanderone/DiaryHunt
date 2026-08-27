@@ -381,6 +381,15 @@ canvas { display: block; width: 100%; }
 
 .modal-buttons { margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; }
 
+.section-head {
+  margin: 20px 0 4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.data-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }

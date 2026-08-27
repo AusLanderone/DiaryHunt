@@ -5,6 +5,7 @@ async function refresh() {
   trades = await window.api.trades.list();
   showJournal();
 }
+window.diary = { refresh };
 
 function showJournal() {
   setActive('tab-journal');

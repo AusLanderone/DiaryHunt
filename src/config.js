@@ -62,7 +62,20 @@ function createConfig({ dataDir }) {
     return data.settings;
   }
 
-  return { get, addItem, removeItem, getSettings, setSettings };
+  // Merge a config snapshot (from DB import). Only known keys are applied.
+  function importAll(obj) {
+    if (!obj || typeof obj !== 'object') return;
+    const data = read();
+    ['exchanges', 'tags', 'types'].forEach((k) => {
+      if (Array.isArray(obj[k])) data[k] = obj[k];
+    });
+    if (obj.settings && typeof obj.settings === 'object') {
+      data.settings = { ...SETTINGS_DEFAULTS, ...obj.settings };
+    }
+    write(data);
+  }
+
+  return { get, addItem, removeItem, getSettings, setSettings, importAll };
 }
 
 module.exports = { createConfig };

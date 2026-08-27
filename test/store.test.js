@@ -60,3 +60,18 @@ test('a backup file is written on the second write', () => {
   const backups = fs.readdirSync(path.join(dir, 'backups'));
   assert.ok(backups.length >= 1, 'expected at least one backup');
 });
+
+test('replaceAll swaps the whole trades list (DB import)', () => {
+  const dir = tmpDir();
+  const store = createStore({ dataDir: dir });
+  store.add(sampleTrade());
+  const imported = [
+    { id: 'a1', num: 1, ticker: 'GOLD', legs: [] },
+    { id: 'b2', num: 2, ticker: 'SILV', legs: [] },
+  ];
+  store.replaceAll(imported);
+  assert.strictEqual(store.list().length, 2);
+  assert.strictEqual(store.get('a1').ticker, 'GOLD');
+  // persists across instances
+  assert.strictEqual(createStore({ dataDir: dir }).list().length, 2);
+});

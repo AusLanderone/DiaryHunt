@@ -56,3 +56,26 @@ test('setSettings does not disturb dictionaries', () => {
   assert.ok(reloaded.get().tags.includes('Пробой'));
   assert.strictEqual(reloaded.getSettings().theme, 'violet');
 });
+
+test('importAll merges dictionaries and settings from a snapshot', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.importAll({
+    exchanges: ['MOEX', 'FOREX', 'BYBIT'],
+    tags: ['Схождение'],
+    types: ['Фьючи'],
+    settings: { theme: 'ocean', font: 'serif', scale: 1.1 },
+  });
+  const reloaded = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(reloaded.get().exchanges, ['MOEX', 'FOREX', 'BYBIT']);
+  assert.deepStrictEqual(reloaded.get().tags, ['Схождение']);
+  assert.strictEqual(reloaded.getSettings().theme, 'ocean');
+  assert.strictEqual(reloaded.getSettings().scale, 1.1);
+});
+
+test('importAll ignores junk input', () => {
+  const cfg = createConfig({ dataDir: tmpDir() });
+  cfg.importAll(null);
+  cfg.importAll('nope');
+  assert.deepStrictEqual(cfg.get().exchanges, ['MOEX', 'FOREX']); // defaults intact
+});

@@ -32,6 +32,48 @@ function registerIpc() {
     fs.writeFileSync(filePath, '﻿' + tradesToCsv(store.list()), 'utf8'); // BOM for Excel
     return { saved: true, path: filePath };
   });
+
+  // Full DB backup: trades + dictionaries + settings, as JSON.
+  ipcMain.handle('db:export', async () => {
+    const day = new Date().toISOString().slice(0, 10);
+    const { canceled, filePath } = await dialog.showSaveDialog({
+      defaultPath: `diaryhunt-backup-${day}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePath) return { saved: false };
+    const cfg = config.get();
+    const data = {
+      app: 'DiaryHunt', schema: 1, exportedAt: new Date().toISOString(),
+      trades: store.list(),
+      config: {
+        exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types,
+        settings: config.getSettings(),
+      },
+    };
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    return { saved: true, path: filePath, count: data.trades.length };
+  });
+
+  // Restore from a backup file (replaces current trades; store backs up first).
+  ipcMain.handle('db:import', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (canceled || !filePaths || !filePaths[0]) return { imported: false };
+    let parsed;
+    try {
+      parsed = JSON.parse(fs.readFileSync(filePaths[0], 'utf8'));
+    } catch {
+      return { imported: false, error: 'Файл не читается как JSON.' };
+    }
+    if (!parsed || !Array.isArray(parsed.trades)) {
+      return { imported: false, error: 'Это не похоже на бэкап DiaryHunt (нет списка сделок).' };
+    }
+    store.replaceAll(parsed.trades);
+    if (parsed.config) config.importAll(parsed.config);
+    return { imported: true, count: parsed.trades.length };
+  });
 }
 
 function createWindow() {

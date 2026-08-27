@@ -59,6 +59,26 @@
 
     const field = (label, input) => el('label', {}, [txt(label), input]);
     const done = el('button', { class: 'btn primary' }, [txt('Готово')]);
+
+    // --- Данные: backup / restore ---
+    const expBtn = el('button', { class: 'btn ghost' }, [txt('Экспорт базы (.json)')]);
+    const impBtn = el('button', { class: 'btn ghost' }, [txt('Импорт базы')]);
+    expBtn.onclick = async () => {
+      const r = await window.api.db.export();
+      if (r.saved) alert(`Сохранено ${r.count} сделок:\n${r.path}`);
+    };
+    impBtn.onclick = async () => {
+      if (!confirm('Импорт заменит ВСЕ текущие сделки данными из файла. Текущая база будет сохранена в резервную копию. Продолжить?')) return;
+      const r = await window.api.db.import();
+      if (r.imported) {
+        alert(`Импортировано сделок: ${r.count}`);
+        if (window.diary) window.diary.refresh();
+        backdrop.remove();
+      } else if (r.error) {
+        alert('Ошибка импорта: ' + r.error);
+      }
+    };
+
     const backdrop = el('div', { class: 'modal-backdrop' }, [
       el('div', { class: 'modal settings-modal' }, [
         el('h2', {}, [txt('Настройки')]),
@@ -68,6 +88,9 @@
           field('Цветовая палитра', themeSel),
           field('Масштаб интерфейса', scaleSel),
         ]),
+        el('div', { class: 'section-head' }, [txt('Данные')]),
+        el('p', { class: 'hint' }, [txt('Полный бэкап (сделки, справочники, настройки) в JSON и восстановление из него.')]),
+        el('div', { class: 'data-row' }, [expBtn, impBtn]),
         el('div', { class: 'modal-buttons' }, [done]),
       ]),
     ]);

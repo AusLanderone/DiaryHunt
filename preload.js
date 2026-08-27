@@ -15,4 +15,8 @@ contextBridge.exposeInMainWorld('api', {
     setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
+  db: {
+    export: () => ipcRenderer.invoke('db:export'),
+    import: () => ipcRenderer.invoke('db:import'),
+  },
 });

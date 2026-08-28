@@ -27,7 +27,7 @@ function periodStart(period, now) {
   return null;
 }
 
-// { query, status: all|open|closed, tag: all|<tag>, period: all|month|quarter|year }
+// { query, status: all|open|closed, tag: all|<tag>, type: all|<type>, period: all|month|quarter|year }
 function filterTrades(trades, filter = {}, now = new Date()) {
   const q = (filter.query || '').trim().toLowerCase();
   const start = periodStart(filter.period, now);
@@ -36,6 +36,7 @@ function filterTrades(trades, filter = {}, now = new Date()) {
     if (filter.status === 'open' && calc.isClosed(t)) return false;
     if (filter.status === 'closed' && !calc.isClosed(t)) return false;
     if (filter.tag && filter.tag !== 'all' && (t.tag || '') !== filter.tag) return false;
+    if (filter.type && filter.type !== 'all' && (t.type || '') !== filter.type) return false;
     if (start && (t.openDate || '') < start) return false;
     return true;
   });

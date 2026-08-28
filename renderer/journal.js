@@ -37,7 +37,7 @@ const usd0 = (n) => (n === null || n === undefined ? '—'
 
 // view state survives re-renders (adding a trade shouldn't reset the filters)
 const state = {
-  query: '', status: 'all', tag: 'all', period: 'all',
+  query: '', status: 'all', tag: 'all', type: 'all', period: 'all',
   sortKey: null, sortDir: 'desc',   // null = default order (newest trade first)
   expanded: new Set(),
 };
@@ -49,7 +49,7 @@ const COLUMNS = [
   { key: 'num', label: '№', sortable: true },
   { key: 'date', label: 'Дата', sortable: true },
   { key: 'ticker', label: 'Тикер', sortable: true },
-  { label: 'Тег' },
+  { label: 'Тип · Тег' },
   { label: 'Ноги' },
   { key: 'spread', label: 'Спред вход → выход', sortable: true, right: true },
   { key: 'profit', label: 'Чистый', sortable: true, right: true },
@@ -84,6 +84,13 @@ function filterBar(trades) {
   tagSel.value = tags.includes(state.tag) ? state.tag : 'all';
   tagSel.onchange = () => { state.tag = tagSel.value; rerender(); };
   bar.appendChild(tagSel);
+
+  const types = [...new Set(trades.map((t) => t.type).filter(Boolean))].sort();
+  const typeSel = el('select', 'sel');
+  typeSel.append(new Option('Все типы', 'all'), ...types.map((t) => new Option(t, t)));
+  typeSel.value = types.includes(state.type) ? state.type : 'all';
+  typeSel.onchange = () => { state.type = typeSel.value; rerender(); };
+  bar.appendChild(typeSel);
 
   const perSel = el('select', 'sel');
   perSel.append(...PERIODS.map(([k, l]) => new Option(l, k)));
@@ -151,10 +158,10 @@ function tradeRow(trade, c) {
 
   const tick = el('div', 'jc ticker');
   tick.append(el('span', 'tk', trade.ticker || '—'));
-  if (trade.type) tick.append(el('span', 'ty', trade.type));
   row.append(tick);
 
   const tagCell = el('div', 'jc tag');
+  if (trade.type) tagCell.append(el('span', 'tag-chip type', trade.type));
   if (trade.tag) tagCell.append(el('span', 'tag-chip', trade.tag));
   row.append(tagCell);
 

@@ -150,7 +150,7 @@ header {
 /* One grid definition drives both the header and every trade row, so the
    columns stay locked together without a <table>. */
 .journal {
-  --jcols: 46px 108px 92px 150px minmax(140px, 1fr) 186px 152px 104px;
+  --jcols: 46px 108px 84px 196px minmax(132px, 1fr) 186px 152px 104px;
   display: flex; flex-direction: column; height: 100%;
 }
 
@@ -245,9 +245,10 @@ header {
 .trade-row .date { flex-direction: column; align-items: flex-start; gap: 1px; }
 .trade-row .date .d1 { font-size: 13px; color: var(--text); }
 .trade-row .date .d2 { font-size: 11px; color: var(--muted-2); }
-.trade-row .ticker { flex-direction: column; align-items: flex-start; gap: 1px; }
 .trade-row .ticker .tk { font-size: 13.5px; font-weight: 600; letter-spacing: 0.02em; }
-.trade-row .ticker .ty { font-size: 11px; color: var(--muted-2); }
+.trade-row .tag { flex-wrap: wrap; gap: 5px; }
+/* type reads as the quieter of the two chips — it groups, the tag describes */
+.tag-chip.type { background: transparent; color: var(--muted-2); }
 .tag-chip {
   padding: 2px 9px;
   border-radius: 999px;

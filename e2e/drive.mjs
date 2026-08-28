@@ -131,8 +131,11 @@ try {
   await page.waitForSelector('.trade-detail', { timeout: 5000 });
   const detail = await page.evaluate(() => document.querySelector('.trade-detail').innerText.replace(/\n/g, ' | '));
   check('expanded detail shows both legs with prices, size and fees',
-    /MOEX/.test(detail) && /FOREX/.test(detail) && /комса/.test(detail)
-    && /шт/.test(detail) && /→/.test(detail), detail);
+    /MOEX/.test(detail) && /FOREX/.test(detail) && /→/.test(detail), detail);
+  // the labels render uppercase via CSS, and innerText returns them transformed
+  check('every column in the expanded trade is labelled',
+    ['Биржа', 'Сделка', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'PnL ноги']
+      .every((l) => detail.toLowerCase().includes(l.toLowerCase())), detail);
   check('expanded detail carries exit spread, total spread and position value',
     /Спред выход/i.test(detail) && /Спред итог/i.test(detail)
     && /Позиция/i.test(detail) && /\$[\d\s]+ → \$[\d\s]+/.test(detail), detail);

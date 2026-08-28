@@ -206,15 +206,22 @@ function tradeDetail(trade, c) {
   const box = el('div', 'trade-detail');
 
   const legs = el('div', 'detail-legs');
+
+  // a header row so each number in the leg lines says what it is
+  const head = el('div', 'detail-leg head');
+  ['Биржа', 'Сделка', 'Цена вход → выход', 'Кол-во', 'Позиция начало → конец', 'Комиссия', 'PnL ноги']
+    .forEach((label, i) => head.append(el('span', ['ex', 'side', 'prices', 'units', 'pos', 'fee', 'pnl'][i], label)));
+  legs.append(head);
+
   trade.legs.forEach((leg, i) => {
     const lc = c.legs[i];
     const line = el('div', 'detail-leg');
     line.append(el('span', 'ex', leg.exchange || '—'));
     line.append(el('span', 'side ' + (leg.side === 'Шорт' ? 'neg' : 'pos'), leg.side || '—'));
     line.append(el('span', 'prices', `${price(leg.entryPrice)} → ${price(leg.exitPrice)}`));
-    line.append(el('span', 'units', F.fmtNum(leg.units) + ' шт'));
+    line.append(el('span', 'units', F.fmtNum(leg.units)));
     line.append(el('span', 'pos', `${usd0(lc.start)} → ${usd0(lc.end)}`));
-    line.append(el('span', 'fee', 'комса ' + rub0(Number(leg.feeRub) || 0)));
+    line.append(el('span', 'fee', rub0(Number(leg.feeRub) || 0)));
     line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
     legs.append(line);
   });

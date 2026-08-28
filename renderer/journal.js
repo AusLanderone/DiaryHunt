@@ -252,7 +252,8 @@ function tradeDetail(trade, c) {
     item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),
     item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),
     item('Комиссии', rub0(c.feeTotalRub), 'neg'),
-    item('Пейаут', rub0(Number(trade.payout) || 0), signCls(Number(trade.payout) || 0)),
+    item('Payout', rub0(Number(trade.payout) || 0), signCls(Number(trade.payout) || 0)),
+    item('Своп', rub0(Number(trade.swap) || 0), signCls(Number(trade.swap) || 0)),
   );
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
   box.append(meta);

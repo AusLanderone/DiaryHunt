@@ -105,7 +105,7 @@ function chartBlock(container, title, marginTop) {
 
 // ---------- equity curve (with the deepest drawdown marked) ----------
 
-function drawEquity(canvas, points, dates, dd) {
+function drawEquity(canvas, points, dates) {
   const H = 320, padL = 56, padR = 16, padTop = 16, padBot = 30;
   const { ctx, W } = setupCanvas(canvas, H);
   if (!points.length) return;
@@ -114,22 +114,7 @@ function drawEquity(canvas, points, dates, dd) {
   const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, points.length - 1);
   const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min, max });
   const pos = CSS('--pos') || '#46c46a';
-  const neg = CSS('--neg') || '#f26d78';
   const muted = CSS('--muted') || '#8b95a6';
-
-  // drawdown band: peak -> trough of the worst decline
-  if (dd && dd.value > 0 && dd.troughIdx > dd.peakIdx) {
-    ctx.fillStyle = 'rgba(242,109,120,0.13)';
-    ctx.fillRect(x(dd.peakIdx), padTop, x(dd.troughIdx) - x(dd.peakIdx), H - padTop - padBot);
-    ctx.strokeStyle = neg; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
-    ctx.beginPath();
-    ctx.moveTo(x(dd.peakIdx), y(points[dd.peakIdx]));
-    ctx.lineTo(x(dd.troughIdx), y(points[dd.troughIdx]));
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = neg; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
-    ctx.fillText(`просадка ${axisRub(-dd.value)}`, x(dd.peakIdx) + 4, padTop + 12);
-  }
 
   // area fill under the curve
   const grad = ctx.createLinearGradient(0, padTop, 0, H - padBot);
@@ -220,139 +205,6 @@ function drawBars(canvas, groups) {
     const g = groups[idx];
     geom = render(idx);
     showTip(tipBody(g.label, g.profit, `${g.count} сд · ${Math.round((g.wins / g.count) * 100)}% в плюс`), e);
-  };
-  canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
-}
-
-// ---------- waterfall: how gross PnL turns into net profit ----------
-
-function drawWaterfall(canvas, s) {
-  const H = 240, padL = 56, padR = 16, padTop = 26, padBot = 34;
-  const pos = CSS('--pos') || '#46c46a';
-  const neg = CSS('--neg') || '#f26d78';
-  const accent = CSS('--accent') || '#4c8dff';
-  const muted = CSS('--muted') || '#8b95a6';
-  const text = CSS('--text') || '#e9edf3';
-
-  // [label, delta, isTotal] — the running balance walks from gross to net
-  const steps = [
-    ['Gross PnL', s.gross, false],
-    ['Комиссии', -s.fees, false],
-    ['Пейаут', s.payout, false],
-    ['Правка', s.adjustment, false],
-    ['Чистый', s.net, true],
-  ].filter(([, v], i) => i < 1 || i === 4 || Math.abs(v) > 0.005);
-
-  // running start/end for each bar
-  let run = 0;
-  const bars = steps.map(([label, delta, isTotal]) => {
-    const from = isTotal ? 0 : run;
-    const to = isTotal ? delta : run + delta;
-    if (!isTotal) run = to;
-    return { label, delta, isTotal, from, to };
-  });
-
-  function render(hoverIdx) {
-    const { ctx, W } = setupCanvas(canvas, H);
-    const lo = Math.min(0, ...bars.flatMap((b) => [b.from, b.to]));
-    const hi = Math.max(0, ...bars.flatMap((b) => [b.from, b.to]));
-    const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min: lo, max: hi });
-    const slot = (W - padL - padR) / bars.length;
-    const bw = Math.min(64, slot * 0.55);
-    const cx = (i) => padL + slot * i + slot / 2;
-
-    // fees/payout are tiny next to gross — floor their height so they stay readable
-    const MIN_H = 7;
-    bars.forEach((b, i) => {
-      const y1 = y(b.from), y2 = y(b.to);
-      const h = Math.max(MIN_H, Math.abs(y2 - y1));
-      const top = b.to >= b.from ? Math.min(y1, y2) - (h - Math.abs(y2 - y1)) : Math.min(y1, y2);
-      ctx.fillStyle = b.isTotal ? accent : b.delta >= 0 ? pos : neg;
-      ctx.globalAlpha = hoverIdx === -1 || hoverIdx === i ? 1 : 0.55;
-      ctx.fillRect(cx(i) - bw / 2, top, bw, h);
-      ctx.globalAlpha = 1;
-
-      // connector to the next bar
-      if (i < bars.length - 1 && !bars[i + 1].isTotal) {
-        ctx.strokeStyle = muted; ctx.globalAlpha = 0.45; ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(cx(i) + bw / 2, y2); ctx.lineTo(cx(i + 1) - bw / 2, y2); ctx.stroke();
-        ctx.setLineDash([]); ctx.globalAlpha = 1;
-      }
-
-      // value above the bar
-      ctx.fillStyle = text; ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
-      ctx.fillText(axisRub(b.isTotal ? b.to : b.delta), cx(i), top - 4);
-
-      ctx.fillStyle = muted; ctx.textBaseline = 'top';
-      ctx.fillText(b.label, cx(i), H - padBot + 8);
-    });
-
-    return { slot };
-  }
-
-  let geom = render(-1);
-  canvas.onmousemove = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const idx = geom.slot ? Math.floor((mx - padL) / geom.slot) : -1;
-    if (idx < 0 || idx >= bars.length) { canvas.onmouseleave(); return; }
-    const b = bars[idx];
-    geom = render(idx);
-    const share = s.gross ? ` · ${pct(Math.abs(b.delta / s.gross), 1)} от gross` : '';
-    showTip(tipBody(b.label, b.isTotal ? b.to : b.delta, b.isTotal ? 'итог после всех статей' : `вклад в результат${share}`), e);
-  };
-  canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
-}
-
-// ---------- scatter: entry spread vs net profit ----------
-
-function drawScatter(canvas, points) {
-  const H = 280, padL = 56, padR = 16, padTop = 18, padBot = 34;
-  const pos = CSS('--pos') || '#46c46a';
-  const neg = CSS('--neg') || '#f26d78';
-  const muted = CSS('--muted') || '#8b95a6';
-
-  function render(hoverIdx) {
-    const { ctx, W } = setupCanvas(canvas, H);
-    if (!points.length) return {};
-    const xs = points.map((p) => p.spread), ys = points.map((p) => p.profit);
-    const xMin = Math.min(0, ...xs), xMax = Math.max(...xs, 0.001);
-    const yMin = Math.min(0, ...ys), yMax = Math.max(0, ...ys);
-    const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min: yMin, max: yMax });
-    const x = (v) => padL + ((v - xMin) * (W - padL - padR)) / Math.max(1e-9, xMax - xMin);
-
-    // X axis: spread ticks in %
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
-    for (let i = 0; i <= 5; i++) {
-      const v = xMin + ((xMax - xMin) * i) / 5;
-      ctx.fillText(pct(v, 2), x(v), H - padBot + 8);
-    }
-
-    points.forEach((p, i) => {
-      ctx.fillStyle = p.profit >= 0 ? pos : neg;
-      ctx.globalAlpha = hoverIdx === -1 || hoverIdx === i ? 0.9 : 0.4;
-      ctx.beginPath(); ctx.arc(x(p.spread), y(p.profit), hoverIdx === i ? 6 : 4.5, 0, Math.PI * 2); ctx.fill();
-      ctx.globalAlpha = 1;
-    });
-
-    return { x, y };
-  }
-
-  let geom = render(-1);
-  canvas.onmousemove = (e) => {
-    if (!geom.x) return;
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    let best = -1, bestD = 12;
-    points.forEach((p, i) => {
-      const d = Math.hypot(geom.x(p.spread) - mx, geom.y(p.profit) - my);
-      if (d < bestD) { bestD = d; best = i; }
-    });
-    if (best === -1) { canvas.onmouseleave(); return; }
-    const p = points[best];
-    geom = render(best);
-    showTip(tipBody(`№${p.num} ${p.ticker || ''}`, p.profit, `спред входа ${pct(p.spread)} · ${ddmm(p.date)}`), e);
   };
   canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
 }
@@ -581,11 +433,9 @@ function renderStats(container, trades) {
 
   let cum = 0;
   const cumulative = profits.map((v) => (cum += v));
-  const dd = an.maxDrawdown(cumulative);
   const pf = an.profitFactor(profits);
   const aw = an.avgWin(profits);
   const al = an.avgLoss(profits);
-  const st = an.streaks(profits);
   const ret = an.avgReturnPct(closed);
   const holds = closed.map((t) => an.holdingDays(t)).filter((d) => d !== null);
   const avgHold = holds.length ? holds.reduce((s, v) => s + v, 0) / holds.length : null;
@@ -603,14 +453,8 @@ function renderStats(container, trades) {
       'Сумма прибылей / сумма убытков. Больше 1 — система в плюсе'),
     metric('Средний плюс', aw === null ? dash : F.fmtRub(aw), 'pos'),
     metric('Средний минус', al === null ? dash : F.fmtRub(al), 'neg'),
-    metric('Макс. просадка', dd.value ? F.fmtRub(-dd.value) : F.fmtRub(0), dd.value ? 'neg' : '',
-      'Самое глубокое падение кривой капитала от пика'),
     metric('Ср. доходность', ret === null ? dash : pct(ret), sign(ret || 0), 'Средний чистый % на задействованный капитал'),
     metric('Ср. время в сделке', avgHold === null ? dash : avgHold.toFixed(1).replace('.', ',') + ' дн'),
-    metric('Серия сейчас', st.current === 0 ? dash : (st.current > 0 ? '+' : '') + st.current,
-      st.current > 0 ? 'pos' : st.current < 0 ? 'neg' : '', 'Сколько сделок подряд в плюс (+) или в минус (−)'),
-    metric('Макс. серии', `${st.maxWin ? '+' + st.maxWin : '0'} / ${st.maxLoss ? '−' + st.maxLoss : '0'}`,
-      '', 'Самая длинная серия побед и поражений'),
     metric('Лучшая сделка', F.fmtRub(best), sign(best)),
     metric('Худшая сделка', F.fmtRub(worst), sign(worst)),
   );
@@ -628,11 +472,7 @@ function renderStats(container, trades) {
   // equity curve + drawdown
   const dates = closed.map((t) => t.closeDate);
   const eq = chartBlock(container, 'Кривая капитала — накопительный профит, ₽');
-  requestAnimationFrame(() => drawEquity(eq, cumulative, dates, dd));
-
-  // where the money comes from
-  const wf = chartBlock(container, 'Структура профита — из чего складывается результат, ₽', '22px');
-  requestAnimationFrame(() => drawWaterfall(wf, an.profitStructure(closed)));
+  requestAnimationFrame(() => drawEquity(eq, cumulative, dates));
 
   // profit by day — vertical bars
   const byDay = an.groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.key < b.key ? -1 : 1));
@@ -646,10 +486,6 @@ function renderStats(container, trades) {
   calTitle.style.marginTop = '22px';
   container.appendChild(calTitle);
   container.appendChild(calendarWidget(an.calendarMap(closed)));
-
-  // entry spread vs profit
-  const sc = chartBlock(container, 'Спред входа против профита — каждая точка это сделка', '22px');
-  requestAnimationFrame(() => drawScatter(sc, an.scatterPoints(closed)));
 
   // distribution of results
   const hist = chartBlock(container, 'Распределение результатов — сколько сделок в каждом диапазоне', '22px');

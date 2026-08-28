@@ -6,7 +6,7 @@ const HEADER = [
   '№', 'Дата открытия', 'Дата закрытия', 'Тип', 'Тикер', 'Тег',
   'Биржа', 'Сделка', 'Цена вход', 'Кол единиц', 'Цена выход', 'Комса',
   'Позиция начало', 'Вход спред', 'Выход спред', 'Спред итог', 'Позиция конец',
-  'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Пейаут',
+  'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout', 'Своп',
   'Чистый профит', 'Комментарий',
 ];
 
@@ -47,6 +47,7 @@ function tradesToCsv(trades) {
         first ? c.pnlNetPct : '',
         first ? trade.usdRub : '',
         first ? trade.payout : '',
+        first ? (trade.swap || 0) : '',
         first ? c.netProfitRub : '',
         first ? trade.comment : '',
       ].map(cell).join(','));

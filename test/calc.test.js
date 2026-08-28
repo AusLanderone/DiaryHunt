@@ -118,3 +118,26 @@ test('estimatePayout: null when no MOEX leg present', () => {
     { exchange: 'BYBIT', side: 'Шорт', entryPrice: 1, units: 1, exitPrice: 1 },
   ] }, 0.06), null);
 });
+
+// Swap — the overnight financing charge, entered in roubles like payout and
+// adjustment, and folded into the net profit the same way.
+test('netProfitRub — swap is added alongside payout and adjustment', () => {
+  const withSwap = { ...trade1, swap: -420 };
+  near(calc.netProfitRub(withSwap), calc.netProfitRub(trade1) - 420);
+});
+
+test('netProfitRub — a positive swap increases the net profit', () => {
+  near(calc.netProfitRub({ ...trade1, swap: 150 }), calc.netProfitRub(trade1) + 150);
+});
+
+test('netProfitRub — trades saved before swap existed still compute', () => {
+  assert.ok(!('swap' in trade1));
+  near(calc.netProfitRub(trade1), 1044.40, 0.05);
+  near(calc.netProfitRub({ ...trade1, swap: null }), 1044.40, 0.05);
+  near(calc.netProfitRub({ ...trade1, swap: '' }), 1044.40, 0.05);
+});
+
+test('computeTrade — exposes the swap it applied', () => {
+  assert.strictEqual(calc.computeTrade({ ...trade1, swap: -420 }).swap, -420);
+  assert.strictEqual(calc.computeTrade(trade1).swap, 0);
+});

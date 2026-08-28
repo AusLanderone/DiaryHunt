@@ -94,11 +94,13 @@ async function openForm(trade, onSaved) {
 
   // payout with an "авто" toggle (computed estimate ↔ manual entry)
   const payout = el('input', { type: 'number', step: 'any', value: t.payout ?? 0 });
+  // swap: overnight financing, entered in roubles like payout; usually negative
+  const swap = el('input', { type: 'number', step: 'any', value: t.swap ?? 0 });
   const payoutAuto = el('input', { type: 'checkbox' });
   payoutAuto.checked = trade ? !!t.payoutAuto : true; // existing trades default to manual
   const autoToggle = el('label', { class: 'auto-toggle' }, [payoutAuto, txt('авто')]);
   const payoutField = el('label', {}, [
-    txt('Пейаут / перелив ₽'),
+    txt('Payout / перелив ₽'),
     el('div', { class: 'field-row' }, [payout, autoToggle]),
   ]);
 
@@ -109,6 +111,7 @@ async function openForm(trade, onSaved) {
   const currentRate = () => (Number(rate.value) || 0) / 100;
   function draft() {
     return { usdRub: Number(usdRub.value) || 0, payout: Number(payout.value) || 0,
+      swap: Number(swap.value) || 0,
       adjustment: Number(t.adjustment) || 0, closeDate: closeDate.value,
       legs: [leg1.read(), leg2.read()] };
   }
@@ -145,11 +148,12 @@ async function openForm(trade, onSaved) {
       item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
       item('Позиция', `${usd0(posSum('start'))} → ${usd0(posSum('end'))}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
+      item('Своп', F.fmtRub(Number(swap.value) || 0), sc(Number(swap.value) || 0)),
       item('Чистый профит', F.fmtRub(c.netProfitRub) || '—', sc(c.netProfitRub)),
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),
     );
   }
-  [usdRub, rate, payout, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
+  [usdRub, rate, payout, swap, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
     i.addEventListener('input', recompute));
   payoutAuto.addEventListener('change', recompute);
 
@@ -187,12 +191,13 @@ async function openForm(trade, onSaved) {
   const backdrop = el('div', { class: 'modal-backdrop' }, [
     el('div', { class: 'modal' }, [
       el('h2', {}, [txt(trade ? `Сделка №${trade.num}` : 'Новая сделка')]),
-      el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
+      el('p', { class: 'hint' }, [txt('Курс, дата и payout подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
         el('label', {}, [txt('Тип'), type, typeList]), el('label', {}, [txt('Тикер'), ticker, tickerList]),
         el('label', {}, [txt('Тег'), tag, tagList]), usdRubField,
-        field('Ставка пейаута, %', rate), payoutField,
+        field('Ставка payout, %', rate), payoutField,
+        field('Своп ₽', swap),
         field('Комментарий', comment, 'full'),
       ]),
       exList,
@@ -222,7 +227,8 @@ async function openForm(trade, onSaved) {
     const payload = {
       openDate: openDate.value, closeDate: closeDate.value, type: typeValue,
       ticker: tickerValue, tag: tagValue, usdRub: Number(usdRub.value) || 0,
-      payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
+      payout: Number(payout.value) || 0, swap: Number(swap.value) || 0,
+      adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: [leg1.read(), leg2.read()],
     };

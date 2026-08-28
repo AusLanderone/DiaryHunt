@@ -67,17 +67,19 @@ function pnlNetPct(trade) {
   return base === 0 ? null : net / base;
 }
 
+// Net profit = PnL in roubles plus the three manual adjustments: payout
+// (the MOEX-side tax/rebate), swap (overnight financing) and a free-form fix.
 function netProfitRub(trade) {
   const rub = pnlRub(trade);
   if (rub === null) return null;
-  return rub + Number(trade.payout || 0) + Number(trade.adjustment || 0);
+  return rub + Number(trade.payout || 0) + Number(trade.swap || 0) + Number(trade.adjustment || 0);
 }
 
 function isClosed(trade) {
   return Boolean(trade.closeDate) && trade.legs.every(hasExit);
 }
 
-// Estimated payout ("Пейаут/перелив"): a MOEX-side tax/rebate approximation.
+// Estimated payout ("Payout / перелив"): a MOEX-side tax/rebate approximation.
 // The exact figure comes from the MOEX platform; this preview is close.
 // rate is a fraction (e.g. 0.06). Returns ₽, or null if the MOEX leg is unclosed.
 // - MOEX leg in profit  -> taxed: payout = -rate * (MOEX gross $ * usdRub)
@@ -112,6 +114,7 @@ function computeTrade(trade) {
     pnlRub: pnlRub(trade),
     pnlNetPct: pnlNetPct(trade),
     netProfitRub: netProfitRub(trade),
+    swap: Number(trade.swap || 0),
     closed: isClosed(trade),
   };
 }

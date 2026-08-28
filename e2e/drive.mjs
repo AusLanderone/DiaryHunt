@@ -182,12 +182,18 @@ try {
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
   await page.waitForSelector('.trade-detail', { timeout: 5000 });
   const detail = await page.evaluate(() => document.querySelector('.trade-detail').innerText.replace(/\n/g, ' | '));
+  const document_text_probe = await page.evaluate(() => document.body.innerText);
   check('expanded detail shows both legs with prices, size and fees',
     /MOEX/.test(detail) && /FOREX/.test(detail) && /→/.test(detail), detail);
   // the labels render uppercase via CSS, and innerText returns them transformed
   check('every column in the expanded trade is labelled',
     ['Биржа', 'Сделка', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'PnL ноги']
       .every((l) => detail.toLowerCase().includes(l.toLowerCase())), detail);
+  check('expanded detail lists payout and swap under their own labels',
+    /payout/i.test(detail) && /своп/i.test(detail), detail);
+  check('the word "пейаут" is gone from the interface',
+    !/пейаут/i.test(document_text_probe), document_text_probe.slice(0, 160));
+
   check('expanded detail carries exit spread, total spread and position value',
     /Спред выход/i.test(detail) && /Спред итог/i.test(detail)
     && /Позиция/i.test(detail) && /\$[\d\s]+ → \$[\d\s]+/.test(detail), detail);
@@ -375,6 +381,30 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
+  const swapRes = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /своп/i.test(l.textContent));
+    if (!label) return { missing: true };
+    const input = label.querySelector('input');
+    const before = document.querySelector('.live').innerText;
+    input.value = '-500';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    const after = document.querySelector('.live').innerText;
+    input.value = '0';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return { before, after, restored: document.querySelector('.live').innerText };
+  });
+  const netFrom = (text) => {
+    const m = text.replace(/\s/g, '').match(/ЧИСТЫЙПРОФИТ(-?[\d]+),(\d{2})/i);
+    return m ? parseFloat(`${m[1]}.${m[2]}`) : NaN;
+  };
+  check('form has a swap field', !swapRes.missing, JSON.stringify(swapRes).slice(0, 120));
+  check('a -500 ₽ swap lowers the net profit by exactly that',
+    Math.abs((netFrom(swapRes.before) - netFrom(swapRes.after)) - 500) < 0.05,
+    `${netFrom(swapRes.before)} -> ${netFrom(swapRes.after)}`);
+  check('clearing the swap restores the net profit',
+    Math.abs(netFrom(swapRes.restored) - netFrom(swapRes.before)) < 0.05, swapRes.restored);
+
   check('form live panel shows exit spread and position value',
     /спред выход/i.test(res.manualLive) && /Позиция/i.test(res.manualLive)
     && /\$[\d\s]+ → \$[\d\s]+/.test(res.manualLive), res.manualLive);

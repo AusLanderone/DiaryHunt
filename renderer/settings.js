@@ -64,6 +64,11 @@
     // --- Данные: backup / restore ---
     const expBtn = el('button', { class: 'btn ghost' }, [txt('Экспорт базы (.json)')]);
     const impBtn = el('button', { class: 'btn ghost' }, [txt('Импорт базы')]);
+    const csvBtn = el('button', { class: 'btn ghost', id: 'btn-export-csv' }, [txt('Экспорт в CSV')]);
+    csvBtn.onclick = async () => {
+      const r = await window.api.exportCsv();
+      if (r.saved) alert('Сохранено: ' + r.path);
+    };
     expBtn.onclick = async () => {
       const r = await window.api.db.export();
       if (r.saved) alert(`Сохранено ${r.count} сделок:\n${r.path}`);
@@ -90,8 +95,8 @@
           field('Масштаб интерфейса', scaleSel),
         ]),
         el('div', { class: 'section-head' }, [txt('Данные')]),
-        el('p', { class: 'hint' }, [txt('Полный бэкап (сделки, справочники, настройки) в JSON и восстановление из него.')]),
-        el('div', { class: 'data-row' }, [expBtn, impBtn]),
+        el('p', { class: 'hint' }, [txt('Полный бэкап (сделки, справочники, настройки) в JSON и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
+        el('div', { class: 'data-row' }, [expBtn, impBtn, csvBtn]),
         el('div', { class: 'modal-buttons' }, [done]),
       ]),
     ]);

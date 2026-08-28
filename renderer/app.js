@@ -30,10 +30,6 @@ function setActive(id) {
 document.getElementById('tab-journal').onclick = showJournal;
 document.getElementById('tab-stats').onclick = showStats;
 document.getElementById('btn-add').onclick = () => window.form.openForm(null, refresh);
-document.getElementById('btn-export').onclick = async () => {
-  const r = await window.api.exportCsv();
-  if (r.saved) alert('Сохранено: ' + r.path);
-};
 document.getElementById('btn-settings').onclick = () => window.settings.openSettings();
 
 async function applySavedSettings() {

@@ -197,3 +197,31 @@ test('legGrossRub — leg PnL in roubles, per its own currency', () => {
   near(calc.legGrossRub({ side: 'Шорт', entryPrice: 7.19, exitPrice: 7.18, units: 100, priceCcy: 'USD' }, 85), 85);
   assert.strictEqual(calc.legGrossRub({ side: 'Лонг', entryPrice: 1, exitPrice: null, units: 1 }, 85), null);
 });
+
+// A mixed trade: one rouble leg on MOEX, one dollar leg elsewhere.
+const mixed = {
+  usdRub: 85, payout: 0, adjustment: 0, closeDate: '2026-08-28',
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85600, feeRub: 50, priceCcy: 'RUB' },
+    { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.19, units: 100, exitPrice: 7.18, feeRub: 30, priceCcy: 'USD' },
+  ],
+};
+
+test('pnlRub — each leg converts by its own currency, fees are already roubles', () => {
+  near(calc.pnlRub(mixed), 100 + 85 - 80);
+});
+
+test('pnlNet — the dollar figure is the rouble one at the trade rate', () => {
+  near(calc.pnlNet(mixed), (100 + 85 - 80) / 85);
+});
+
+test('positionStartRub / positionEndRub — legs summed in roubles', () => {
+  near(calc.positionStartRub(mixed), 85500 + 7.19 * 100 * 85);
+  near(calc.positionEndRub(mixed), 85600 + 7.18 * 100 * 85);
+});
+
+test('all-dollar trades keep their verified numbers', () => {
+  near(calc.pnlRub(trade1), 1339.40, 0.05);
+  near(calc.netProfitRub(trade1), 1044.40, 0.05);
+  near(calc.netProfitRub(trade3), 3923.97, 0.5);
+});

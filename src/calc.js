@@ -82,22 +82,44 @@ function swapTotalRub(trade) {
   return trade.legs.reduce((s, leg) => s + legSwapRub(leg, trade.usdRub), 0);
 }
 
-function pnlNet(trade) {
-  const gross = grossTotal(trade);
-  if (gross === null) return null;
-  return gross - feeTotalRub(trade) / Number(trade.usdRub);
+// Capital tied up, both legs converted to roubles by their own price currency.
+function positionStartRub(trade) {
+  return trade.legs.reduce((s, leg) => s + legPositionStart(leg) * legPriceMul(leg, trade.usdRub), 0);
 }
 
+function positionEndRub(trade) {
+  let sum = 0;
+  for (const leg of trade.legs) {
+    const end = legPositionEnd(leg);
+    if (end === null) return null;
+    sum += end * legPriceMul(leg, trade.usdRub);
+  }
+  return sum;
+}
+
+// Roubles are the primary unit: each leg's gross converts by its own price
+// currency and fees are already roubles. The dollar figure derives from it, so
+// an all-dollar trade lands on exactly the numbers it did before.
 function pnlRub(trade) {
-  const net = pnlNet(trade);
-  return net === null ? null : net * Number(trade.usdRub);
+  let sum = 0;
+  for (const leg of trade.legs) {
+    const g = legGrossRub(leg, trade.usdRub);
+    if (g === null) return null;
+    sum += g;
+  }
+  return sum - feeTotalRub(trade);
+}
+
+function pnlNet(trade) {
+  const rub = pnlRub(trade);
+  const rate = Number(trade.usdRub) || 0;
+  return rub === null || rate === 0 ? null : rub / rate;
 }
 
 function pnlNetPct(trade) {
-  const net = pnlNet(trade);
-  if (net === null) return null;
-  const base = trade.legs.reduce((s, leg) => s + legPositionStart(leg), 0);
-  return base === 0 ? null : net / base;
+  const rub = pnlRub(trade);
+  const base = positionStartRub(trade);
+  return rub === null || base === 0 ? null : rub / base;
 }
 
 // Net profit = PnL in roubles plus the manual adjustments: payout (the
@@ -157,7 +179,7 @@ const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
-  legPriceCcy, legPriceMul, legGrossRub,
+  legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,
 };

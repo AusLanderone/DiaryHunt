@@ -253,9 +253,10 @@ test('entrySpread — two legs keep the verified numbers', () => {
   assert.ok(calc.entrySpread(trade3) < 0, 'trade #3 entry spread stays negative');
 });
 
-test('entrySpread — the triangle divides the synthetic by the market cross', () => {
-  near(calc.entrySpread(triangle), 85500 / (11900 * 7.18) - 1, 1e-9);
-  near(calc.exitSpread(triangle), 85400 / (11880 * 7.175) - 1, 1e-9);
+test('entrySpread — the triangle weighs the synthetic against the market cross', () => {
+  const relative = (a, b) => (a - b) / ((a + b) / 2);
+  near(calc.entrySpread(triangle), relative(85500, 11900 * 7.18), 1e-9);
+  near(calc.exitSpread(triangle), relative(85400, 11880 * 7.175), 1e-9);
 });
 
 test('entrySpread — degenerate shapes yield null instead of Infinity', () => {
@@ -282,4 +283,52 @@ test('computeTrade — leg figures come with their rouble equivalents', () => {
   near(c.legs[0].grossRub, -100);   // long 85500 -> 85400
   near(c.positionStartRub, 85500 + 11900 + 7.18 * 85);
   near(c.positionEndRub, 85400 + 11880 + 7.175 * 85);
+});
+
+// ---- spread is measured against the mid price, as the source sheet does ----
+
+// Sheet trade #1 with the full-precision prices from the sheet itself
+const sheet1 = {
+  usdRub: 83.7, payout: -295, adjustment: 0, closeDate: '2026-08-13',
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 1.1505, units: 42000, exitPrice: 1.1519, feeRub: 270 },
+    { exchange: 'FOREX', side: 'Шорт', entryPrice: 1.1526925, units: 40000, exitPrice: 1.153608, feeRub: 232 },
+  ],
+};
+// Sheet trade #3 — the one where measuring from the first leg was visibly off
+const sheet3 = {
+  usdRub: 84.95, payout: 3061, adjustment: 0, closeDate: '2026-08-17',
+  legs: [
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 65.76, units: 530, exitPrice: 66.57, feeRub: 46 },
+    { exchange: 'FOREX', side: 'Лонг', entryPrice: 65.269, units: 500, exitPrice: 66.149, feeRub: 0 },
+  ],
+};
+
+test('entrySpread — matches the sheet: difference over the mid price', () => {
+  near(calc.entrySpread(sheet1) * 100, 0.1904, 0.0002);
+  near(calc.entrySpread(sheet3) * 100, -0.7495, 0.0002);
+  near(calc.exitSpread(sheet3) * 100, -0.6344, 0.0002);
+  near(calc.spreadTotal(sheet3) * 100, -0.1150, 0.0003);
+});
+
+test('entrySpread — the triangle still reads +0,07%', () => {
+  const tri = {
+    usdRub: 85, payout: 0, adjustment: 0, closeDate: '2026-08-28',
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85400, feeRub: 0, role: 'mul' },
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 11900, units: 1, exitPrice: 11880, feeRub: 0, role: 'div' },
+      { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.18, units: 1, exitPrice: 7.175, feeRub: 0, role: 'div' },
+    ],
+  };
+  const den = 11900 * 7.18;
+  near(calc.entrySpread(tri), (85500 - den) / ((85500 + den) / 2), 1e-9);
+  near(calc.entrySpread(tri) * 100, 0.0679, 0.001);
+});
+
+test('entrySpread — a symmetric measure: swapping the legs only flips the sign', () => {
+  const flipped = { ...sheet3, legs: [
+    { ...sheet3.legs[1], role: 'div' },
+    { ...sheet3.legs[0], role: 'mul' },
+  ] };
+  near(calc.entrySpread(flipped), -calc.entrySpread(sheet3), 1e-12);
 });

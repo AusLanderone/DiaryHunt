@@ -40,7 +40,7 @@ const trade1 = {
   ticker: 'ED', tag: 'Схождение', usdRub: 83.7, payout: -295, adjustment: 0, comment: 'e2e #1',
   legs: [
     { exchange: 'MOEX', side: 'Лонг', entryPrice: 1.1505, units: 42000, exitPrice: 1.1519, feeRub: 270 },
-    { exchange: 'FOREX', side: 'Шорт', entryPrice: 1.15269, units: 40000, exitPrice: 1.15361, feeRub: 232 },
+    { exchange: 'FOREX', side: 'Шорт', entryPrice: 1.1526925, units: 40000, exitPrice: 1.1536125, feeRub: 232 },
   ],
 };
 // Trade #3: legs reversed (Шорт first) — guards leg-order spread + short-first gross.
@@ -75,7 +75,8 @@ try {
       netProfit: window.format.fmtRub(c.netProfitRub), closed: c.closed };
   }, trade1);
   check('trade #1 netProfit ≈ 1044.40 ₽', near(c1.net, 1044.4), `got ${c1.net}`);
-  check('trade #1 entry spread = 0.1904%', c1.entry === '0.1904%', `got ${c1.entry}`);
+  // the sheet measures the spread against the mid price of the legs
+  check('trade #1 entry spread = 0.1904% (sheet)', c1.entry === '0.1904%', `got ${c1.entry}`);
   check('trade #1 netProfit format contains 044,40 ₽', norm(c1.netProfit).includes('044,40₽'), c1.netProfit);
   check('trade #1 is closed', c1.closed === true);
 
@@ -606,8 +607,9 @@ try {
     const c = window.calc.computeTrade(t);
     return { entry: c.entrySpread, exit: c.exitSpread, net: c.netProfitRub, legs: t.legs.length };
   }));
-  check('spread matches 85500 / (11900 × 7,18) − 1',
-    Math.abs(triCalc.entry - (85500 / (11900 * 7.18) - 1)) < 1e-9, String(triCalc.entry));
+  const relative = (a, b) => (a - b) / ((a + b) / 2);
+  check('spread weighs 85500 against 11900 × 7,18',
+    Math.abs(triCalc.entry - relative(85500, 11900 * 7.18)) < 1e-9, String(triCalc.entry));
   check('net profit sums the legs in their own currencies',
     Math.abs(triCalc.net - (100 + 20 + 0.005 * 85)) < 0.01, String(triCalc.net));
 

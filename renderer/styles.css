@@ -426,3 +426,95 @@ canvas { display: block; width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- stats: period filter ---------- */
+.period-bar { display: flex; align-items: center; gap: 8px; margin: 14px 0 2px; }
+.period-label {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted); margin-right: 2px;
+}
+.chip {
+  padding: 5px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-family: inherit; font-size: 12.5px;
+  cursor: pointer;
+}
+.chip:hover { color: var(--text); border-color: var(--muted-2); }
+.chip.active {
+  background: var(--accent); border-color: var(--accent);
+  color: #fff; font-weight: 600;
+}
+:root[data-theme="light"] .chip.active { color: #fff; }
+
+/* ---------- stats: calendar heatmap ---------- */
+.calendars {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+.cal {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px 14px;
+}
+.cal-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.cal-sum { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--text); }
+.cal-sum.pos { color: var(--pos); }
+.cal-sum.neg { color: var(--neg); }
+/* minmax(0,…): aspect-ratio cells otherwise inflate the column min-content size */
+.cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.cal-wd {
+  text-align: center; font-size: 10px; color: var(--muted-2);
+  padding-bottom: 2px;
+}
+.cal-cell {
+  /* fixed height, not aspect-ratio: inside a grid the latter inflates rows
+     that contain the month's leading empty cells */
+  height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 5px;
+  background: var(--surface-2);
+  color: var(--muted-2);
+  font-family: var(--mono); font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.cal-cell.cal-blank { background: transparent; }
+.cal-cell.has { color: var(--text); font-weight: 600; cursor: default; }
+.cal-cell.has.pos { background: color-mix(in srgb, var(--pos) calc(var(--a) * 100%), var(--surface-2)); }
+.cal-cell.has.neg { background: color-mix(in srgb, var(--neg) calc(var(--a) * 100%), var(--surface-2)); }
+.cal-cell.has:hover { outline: 1px solid var(--text); }
+
+/* ---------- stats: monthly summary table ---------- */
+.panel.wide { margin-bottom: 18px; }
+.panel-empty { color: var(--muted-2); font-size: 12.5px; padding: 6px 0 2px; }
+.mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mini-table th {
+  text-align: left; padding: 6px 10px 8px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.mini-table th:not(:first-child) { text-align: right; }
+.mini-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.mini-table tbody tr:last-child td { border-bottom: none; }
+.mini-table td:first-child { text-align: left; }
+.mini-table td.num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.mini-table td.pos { color: var(--pos); font-weight: 600; }
+.mini-table td.neg { color: var(--neg); font-weight: 600; }
+.mini-table tbody tr:hover td { background: rgba(255,255,255,.03); }

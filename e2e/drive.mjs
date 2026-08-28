@@ -62,6 +62,9 @@ try {
     timeout: 30000,
   });
   const page = await app.firstWindow();
+  // surface renderer crashes instead of silently rendering half a view
+  page.on('pageerror', (err) => { failures++; console.log(`  ✗ renderer error: ${err.message}`); });
+  page.on('console', (m) => { if (m.type() === 'error') console.log(`  ! console: ${m.text()}`); });
   await page.waitForSelector('#btn-add', { timeout: 15000 });
   console.log('app launched:', await page.title());
 
@@ -100,10 +103,82 @@ try {
   console.log('\n[3] stats');
   await page.evaluate(() => document.querySelector('#tab-stats').click());
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(SHOT, '03-stats.png') });
+  await page.screenshot({ path: path.join(SHOT, '03-stats.png'), fullPage: true });
   const stats = await page.evaluate(() => document.querySelector('#view').innerText);
   check('stats: 2 closed trades', /закрытых сделок[^\d]*2/i.test(stats.replace(/\n/g, ' ')), '');
   check('stats: winrate 100.0%', norm(stats).includes('100.0%'));
+
+  console.log('\n[3b] stats widgets');
+  const widgets = await page.evaluate(() => ({
+    canvases: document.querySelectorAll('#view canvas').length,
+    painted: [...document.querySelectorAll('#view canvas')].every((c) => c.width > 0 && c.height > 0),
+    chips: [...document.querySelectorAll('.period-bar .chip')].map((b) => b.textContent),
+    calCells: document.querySelectorAll('.cal-cell.has').length,
+    panels: [...document.querySelectorAll('.panel h3')].map((h) => h.textContent),
+    monthRows: document.querySelectorAll('.mini-table tbody tr').length,
+    metrics: [...document.querySelectorAll('.metric')].map((m) => m.innerText.replace(/\n/g, ': ')),
+  }));
+  check('5 charts painted (equity, waterfall, days, scatter, histogram)',
+    widgets.canvases === 5 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
+  check('period chips rendered', widgets.chips.length === 4, widgets.chips.join('|'));
+  check('calendar heatmap marks both close days', widgets.calCells === 2, `got ${widgets.calCells}`);
+  check('spread / holding / capital / weekday panels present',
+    ['спреду входа', 'времени удержания', 'объёму позиции', 'дню недели']
+      .every((t) => widgets.panels.some((p) => p.toLowerCase().includes(t))), widgets.panels.join(' | '));
+  check('monthly table has a row per month', widgets.monthRows === 1, `got ${widgets.monthRows}`);
+  const hasMetric = (re) => widgets.metrics.some((m) => re.test(m.toLowerCase()));
+  check('profit factor metric shown (no losses -> ∞)', hasMetric(/профит-фактор.*∞/i), widgets.metrics.join(' / '));
+  check('drawdown metric shown', hasMetric(/просадка/i));
+  check('avg holding time metric shown', hasMetric(/время в сделке.*0,0 дн/i), widgets.metrics.join(' / '));
+  check('streak metric shows +2', hasMetric(/серия сейчас.*\+2/i), widgets.metrics.join(' / '));
+
+  console.log('\n[3c] period filter');
+  await page.evaluate(() => window.api.trades.add({
+    openDate: '2025-03-02', closeDate: '2025-03-02', type: 'Фьючи', ticker: 'OLD', tag: '',
+    usdRub: 80, payout: 0, adjustment: 0, comment: 'e2e old',
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 99, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 0 },
+    ],
+  }));
+  await page.reload();
+  await page.waitForSelector('#tab-stats', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(300);
+  const closedCount = () => page.evaluate(() =>
+    document.querySelector('.metric .value')?.textContent.trim());
+  check('all-time period counts the 2025 trade too', (await closedCount()) === '3', `got ${await closedCount()}`);
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
+    .find((b) => b.textContent === 'Месяц').click());
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(SHOT, '05-stats-month.png'), fullPage: true });
+  check('month period drops the 2025 trade', (await closedCount()) === '2', `got ${await closedCount()}`);
+  const winrateMonth = await page.evaluate(() => document.querySelector('#view').innerText);
+  check('month period winrate back to 100.0%', norm(winrateMonth).includes('100.0%'));
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
+    .find((b) => b.textContent === 'Всё время').click());
+  await page.waitForTimeout(200);
+  await page.evaluate(() => window.api.trades.list().then((ts) => {
+    const old = ts.find((t) => t.ticker === 'OLD');
+    return old ? window.api.trades.remove(old.id) : null;
+  }));
+
+  console.log('\n[3d] stats survive an empty diary');
+  const ids = await page.evaluate(() => window.api.trades.list().then((ts) => ts.map((t) => t.id)));
+  for (const id of ids) await page.evaluate((i) => window.api.trades.remove(i), id);
+  await page.reload();
+  await page.waitForSelector('#tab-stats', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(300);
+  const emptyView = await page.evaluate(() => ({
+    text: document.querySelector('#view .empty')?.textContent || '',
+    canvases: document.querySelectorAll('#view canvas').length,
+  }));
+  check('empty diary shows the hint instead of charts',
+    /нет закрытых сделок/i.test(emptyView.text) && emptyView.canvases === 0, JSON.stringify(emptyView));
+  for (const t of [trade1, trade3]) await page.evaluate((x) => window.api.trades.add(x), t);
+  await page.reload();
+  await page.waitForSelector('#btn-add', { timeout: 10000 });
 
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());

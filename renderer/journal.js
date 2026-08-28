@@ -180,28 +180,14 @@ function tradeRow(trade, c) {
   row.append(legs);
 
   const spread = el('div', 'jc spread');
-  const now = closed ? null : window.calc.unrealized(trade);
   spread.append(el('span', 'sp-in', pct2(c.entrySpread)));
   spread.append(el('span', 'sp-arrow', '→'));
-  spread.append(el('span', 'sp-out' + (closed || now ? '' : ' muted'),
-    closed ? pct2(c.exitSpread) : now ? pct2(now.exitSpread) : '—'));
+  spread.append(el('span', 'sp-out' + (closed ? '' : ' muted'), closed ? pct2(c.exitSpread) : '—'));
   row.append(spread);
 
   const money = el('div', 'jc money');
-  if (closed) {
-    money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));
-  } else {
-    const now = window.calc.unrealized(trade);
-    if (now) {
-      // valued at the prices last noted for this trade, hence the ≈
-      const est = el('span', 'sum est ' + signCls(now.netProfitRub),
-        '≈ ' + window.format.fmtRub(now.netProfitRub));
-      est.title = 'Оценка по текущим ценам, внесённым в сделку';
-      money.append(est);
-    } else {
-      money.append(pill('открыта', 'open'));
-    }
-  }
+  if (closed) money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));
+  else money.append(pill('открыта', 'open'));
   row.append(money);
 
   const act = el('div', 'jc actions');
@@ -287,76 +273,7 @@ function tradeDetail(trade, c) {
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
   box.append(meta);
 
-  if (!c.closed) box.append(markBlock(trade));
   if (trade.comment) box.append(el('div', 'detail-comment', trade.comment));
-  return box;
-}
-
-// Current prices for an open trade: what it is worth if it closed right here.
-function markBlock(trade) {
-  const F = window.format;
-  const box = el('div', 'mark-block');
-  box.append(el('div', 'mark-title', 'Сейчас — оценка по текущим ценам'));
-
-  const rowsWrap = el('div', 'mark-rows');
-  const out = el('div', 'mark-out');
-  const inputs = trade.legs.map((leg) => {
-    const line = el('div', 'mark-row');
-    line.append(el('span', 'ex', leg.exchange || '—'));
-    line.append(el('span', 'entry', `вход ${price(leg.entryPrice)}`));
-    const input = el('input', 'mark-input');
-    input.type = 'number';
-    input.step = 'any';
-    input.value = leg.markPrice ?? '';
-    input.placeholder = 'текущая цена';
-    input.onclick = (e) => e.stopPropagation();
-    line.append(input);
-    rowsWrap.append(line);
-    return input;
-  });
-
-  const draft = () => ({
-    ...trade,
-    legs: trade.legs.map((leg, i) => ({
-      ...leg,
-      markPrice: inputs[i].value === '' ? null : Number(inputs[i].value),
-    })),
-  });
-
-  function recompute() {
-    const now = window.calc.unrealized(draft());
-    out.innerHTML = '';
-    if (!now) {
-      out.append(el('span', 'mark-hint', 'Заполните цену по каждой ноге, чтобы увидеть оценку'));
-      return;
-    }
-    const item = (k, v, cls) => {
-      const i = el('span', 'mi');
-      i.append(el('span', 'k', k), el('span', 'v' + (cls ? ' ' + cls : ''), v));
-      return i;
-    };
-    out.append(
-      item('Спред сейчас', pct2(now.exitSpread)),
-      item('Спред итог', pct2(now.spreadTotal), signCls(now.spreadTotal)),
-      item('PnL', F.fmtRub(now.pnlRub), signCls(now.pnlRub)),
-      item('Если закрыть', F.fmtRub(now.netProfitRub), signCls(now.netProfitRub)),
-    );
-  }
-
-  inputs.forEach((i) => i.addEventListener('input', recompute));
-  recompute();
-
-  const save = el('button', 'btn ghost mark-save', 'Запомнить цены');
-  save.title = 'Сохранить текущие цены в сделке, чтобы оценка была видна в списке';
-  save.onclick = async (e) => {
-    e.stopPropagation();
-    const legs = draft().legs;
-    await window.api.trades.update(trade.id, { legs, markedAt: new Date().toISOString().slice(0, 10) });
-    window.diary.refresh();
-  };
-
-  box.append(rowsWrap, out, save);
-  if (trade.markedAt) box.append(el('div', 'mark-when', `цены от ${shortDate(trade.markedAt)}`));
   return box;
 }
 

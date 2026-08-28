@@ -161,25 +161,6 @@ function netProfitRub(trade) {
   return rub + Number(trade.payout || 0) + swapTotalRub(trade) + Number(trade.adjustment || 0);
 }
 
-// What an open trade is worth right now. Each leg can carry a markPrice — the
-// price it currently trades at — and the whole trade is then valued as if it
-// closed there: same spread, PnL, payout, swap and adjustment as a real close.
-const hasMark = (leg) => leg.markPrice !== null && leg.markPrice !== undefined && leg.markPrice !== '';
-
-function markedTrade(trade) {
-  return {
-    ...trade,
-    closeDate: trade.closeDate || 'сейчас',
-    legs: trade.legs.map((leg) => ({ ...leg, exitPrice: Number(leg.markPrice) })),
-  };
-}
-
-function unrealized(trade) {
-  if (isClosed(trade)) return null;                    // a closed trade has a real result
-  if (!trade.legs.length || !trade.legs.every(hasMark)) return null;
-  return computeTrade(markedTrade(trade));
-}
-
 function isClosed(trade) {
   return Boolean(trade.closeDate) && trade.legs.every(hasExit);
 }
@@ -243,7 +224,7 @@ const _api = {
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
-  isClosed, computeTrade, estimatePayout, hasMark, markedTrade, unrealized,
+  isClosed, computeTrade, estimatePayout,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.calc = _api;

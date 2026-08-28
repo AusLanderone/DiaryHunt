@@ -67,7 +67,7 @@ function registerIpc() {
       app: 'DiaryHunt', schema: 1, exportedAt: new Date().toISOString(),
       trades: store.list(),
       config: {
-        exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types,
+        exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types, tickers: cfg.tickers,
         settings: config.getSettings(),
       },
     };

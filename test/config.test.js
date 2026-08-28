@@ -79,3 +79,21 @@ test('importAll ignores junk input', () => {
   cfg.importAll('nope');
   assert.deepStrictEqual(cfg.get().exchanges, ['MOEX', 'FOREX']); // defaults intact
 });
+
+test('tickers are a dictionary like tags: empty by default, appended on use', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(cfg.get().tickers, []);
+  cfg.addItem('tickers', 'ED');
+  cfg.addItem('tickers', 'ED');
+  cfg.addItem('tickers', 'SILV');
+  const reloaded = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(reloaded.get().tickers, ['ED', 'SILV']);
+});
+
+test('importAll carries the ticker dictionary too', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.importAll({ tickers: ['GOLD', 'ED'], tags: ['Схождение'] });
+  assert.deepStrictEqual(createConfig({ dataDir: dir }).get().tickers, ['GOLD', 'ED']);
+});

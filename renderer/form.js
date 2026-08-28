@@ -63,7 +63,12 @@ async function openForm(trade, onSaved) {
   // editable type / tag / exchange — all backed by datalists, new values saved to config
   const typeList = el('datalist', { id: 'dh-typelist' }, cfg.types.map((x) => new Option(x, x)));
   const type = el('input', { type: 'text', list: 'dh-typelist', value: t.type || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
-  const ticker = el('input', { type: 'text', value: t.ticker || '', placeholder: 'напр. ED' });
+  // ticker works like the tag field: pick a known one or type a new one, which
+  // is remembered. Seeded from the dictionary plus whatever the diary already
+  // traded, so the list is useful before anything has been saved through here.
+  const knownTickers = [...new Set([...(cfg.tickers || []), ...all.map((x) => x.ticker).filter(Boolean)])].sort();
+  const tickerList = el('datalist', { id: 'dh-tickerlist' }, knownTickers.map((x) => new Option(x, x)));
+  const ticker = el('input', { type: 'text', list: 'dh-tickerlist', value: t.ticker || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
   const tagList = el('datalist', { id: 'dh-taglist' }, cfg.tags.map((x) => new Option(x, x)));
   const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
   const exList = el('datalist', { id: 'dh-exlist' }, cfg.exchanges.map((x) => new Option(x, x)));
@@ -165,7 +170,7 @@ async function openForm(trade, onSaved) {
       el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
-        el('label', {}, [txt('Тип'), type, typeList]), field('Тикер', ticker),
+        el('label', {}, [txt('Тип'), type, typeList]), el('label', {}, [txt('Тикер'), ticker, tickerList]),
         el('label', {}, [txt('Тег'), tag, tagList]), usdRubField,
         field('Ставка пейаута, %', rate), payoutField,
         field('Комментарий', comment, 'full'),
@@ -186,6 +191,8 @@ async function openForm(trade, onSaved) {
     // persist any newly-typed dictionary values so they appear next time
     const tagValue = tag.value.trim();
     const typeValue = type.value.trim();
+    const tickerValue = ticker.value.trim();
+    if (tickerValue && !(cfg.tickers || []).includes(tickerValue)) await window.api.config.addItem('tickers', tickerValue);
     if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
     if (typeValue && !cfg.types.includes(typeValue)) await window.api.config.addItem('types', typeValue);
     const seenEx = new Set(cfg.exchanges);
@@ -194,7 +201,7 @@ async function openForm(trade, onSaved) {
     }
     const payload = {
       openDate: openDate.value, closeDate: closeDate.value, type: typeValue,
-      ticker: ticker.value.trim(), tag: tagValue, usdRub: Number(usdRub.value) || 0,
+      ticker: tickerValue, tag: tagValue, usdRub: Number(usdRub.value) || 0,
       payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: [leg1.read(), leg2.read()],

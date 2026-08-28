@@ -86,6 +86,22 @@ try {
   check('trade #3 netProfit ≈ 3923.97 ₽ (short-leg-first)', near(c3.net, 3923.97, 0.5), `got ${c3.net}`);
   check('trade #3 entry spread is negative (leg-order, not side)', c3.entryRaw < 0, `got ${c3.entryRaw}`);
 
+  console.log('\n[1b] toolbar');
+  const toolbar = await page.evaluate(() => ({
+    buttons: [...document.querySelectorAll('header .actions button')].map((b) => b.textContent.trim()),
+    csvInSettings: null,
+  }));
+  check('CSV export is gone from the toolbar',
+    !toolbar.buttons.some((b) => /csv/i.test(b)), toolbar.buttons.join('|'));
+  await page.evaluate(() => document.querySelector('#btn-settings').click());
+  await page.waitForSelector('.settings-modal', { timeout: 8000 });
+  const inSettings = await page.evaluate(() => {
+    const has = !!document.querySelector('#btn-export-csv');
+    document.querySelector('.settings-modal .modal-buttons .btn').click();
+    return has;
+  });
+  check('CSV export moved into settings → Данные', inSettings);
+
   console.log('\n[2] journal via real IPC + store');
   await page.screenshot({ path: path.join(SHOT, '01-empty.png') });
   await page.evaluate((t) => window.api.trades.add(t), trade1);

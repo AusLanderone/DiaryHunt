@@ -447,6 +447,37 @@ try {
   const reopened = await page.evaluate(() => [...document.getElementById('dh-tickerlist').options].map((o) => o.value));
   check('the remembered ticker shows up in the next trade form', reopened.includes('NEWTKR'), reopened.join('|'));
 
+  console.log('\n[7] dropdowns offer what the diary already holds');
+  // a trade whose type/tag/exchange never went through the form — as after a DB
+  // import — must still show up in the dropdowns
+  await page.evaluate(() => window.api.trades.add({
+    openDate: '2026-08-26', closeDate: '2026-08-26', type: 'RWA-спот', ticker: 'IMPORTED',
+    tag: 'Импорт', usdRub: 85, payout: 0, adjustment: 0, comment: '',
+    legs: [
+      { exchange: 'КРАКЕН', side: 'Лонг', entryPrice: 10, units: 5, exitPrice: 11, feeRub: 0 },
+      { exchange: 'BYBIT', side: 'Шорт', entryPrice: 10.1, units: 5, exitPrice: 10.2, feeRub: 0 },
+    ],
+  }));
+  await page.reload();
+  await page.waitForSelector('#btn-add', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const lists = await page.evaluate(() => {
+    const opts = (id) => [...document.getElementById(id).options].map((o) => o.value);
+    return { types: opts('dh-typelist'), tags: opts('dh-taglist'),
+      tickers: opts('dh-tickerlist'), exchanges: opts('dh-exlist') };
+  });
+  check('type dropdown offers a type only seen in an existing trade',
+    lists.types.includes('RWA-спот'), lists.types.join('|'));
+  check('tag dropdown does the same', lists.tags.includes('Импорт'), lists.tags.join('|'));
+  check('ticker dropdown does the same', lists.tickers.includes('IMPORTED'), lists.tickers.join('|'));
+  check('exchange dropdown does the same', lists.exchanges.includes('КРАКЕН'), lists.exchanges.join('|'));
+  check('dictionary defaults are still offered', lists.types.includes('Фьючи'), lists.types.join('|'));
+  await page.evaluate(() => window.api.trades.list().then((ts) => {
+    const t = ts.find((x) => x.ticker === 'IMPORTED');
+    return t ? window.api.trades.remove(t.id) : null;
+  }));
+
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

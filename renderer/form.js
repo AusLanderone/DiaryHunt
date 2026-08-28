@@ -60,18 +60,25 @@ async function openForm(trade, onSaved) {
 
   const openDate = el('input', { type: 'date', value: t.openDate || '' });
   const closeDate = el('input', { type: 'date', value: t.closeDate || '' });
-  // editable type / tag / exchange — all backed by datalists, new values saved to config
-  const typeList = el('datalist', { id: 'dh-typelist' }, cfg.types.map((x) => new Option(x, x)));
-  const type = el('input', { type: 'text', list: 'dh-typelist', value: t.type || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
-  // ticker works like the tag field: pick a known one or type a new one, which
-  // is remembered. Seeded from the dictionary plus whatever the diary already
-  // traded, so the list is useful before anything has been saved through here.
-  const knownTickers = [...new Set([...(cfg.tickers || []), ...all.map((x) => x.ticker).filter(Boolean)])].sort();
-  const tickerList = el('datalist', { id: 'dh-tickerlist' }, knownTickers.map((x) => new Option(x, x)));
-  const ticker = el('input', { type: 'text', list: 'dh-tickerlist', value: t.ticker || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
-  const tagList = el('datalist', { id: 'dh-taglist' }, cfg.tags.map((x) => new Option(x, x)));
-  const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
-  const exList = el('datalist', { id: 'dh-exlist' }, cfg.exchanges.map((x) => new Option(x, x)));
+  // Every editable dropdown offers the dictionary PLUS whatever the diary already
+  // holds. The dictionary only grows when a trade is saved through this form, so
+  // imported or hand-edited trades would otherwise contribute nothing to pick from.
+  const known = (dict, pick) => [...new Set([...(dict || []), ...all.flatMap(pick).filter(Boolean)])].sort();
+  const combo = (id, list, value) => {
+    const dl = el('datalist', { id }, list.map((x) => new Option(x, x)));
+    const input = el('input', { type: 'text', list: id, value: value || '',
+      placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
+    return { dl, input };
+  };
+
+  const typeCombo = combo('dh-typelist', known(cfg.types, (x) => [x.type]), t.type);
+  const typeList = typeCombo.dl, type = typeCombo.input;
+  const tickerCombo = combo('dh-tickerlist', known(cfg.tickers, (x) => [x.ticker]), t.ticker);
+  const tickerList = tickerCombo.dl, ticker = tickerCombo.input;
+  const tagCombo = combo('dh-taglist', known(cfg.tags, (x) => [x.tag]), t.tag);
+  const tagList = tagCombo.dl, tag = tagCombo.input;
+  const exList = el('datalist', { id: 'dh-exlist' },
+    known(cfg.exchanges, (x) => x.legs.map((l) => l.exchange)).map((x) => new Option(x, x)));
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
   // "↻ курс" fills the field from MOEX (CBR as fallback); typing over it still wins
   const rateBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↻ курс')]);

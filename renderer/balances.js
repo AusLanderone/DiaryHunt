@@ -47,7 +47,7 @@ function showTip(html, e) {
 const hideTip = () => { chartTip().style.display = 'none'; };
 
 // ₽ or $ — the toggle above the curve; survives re-renders
-const state = { unit: 'rub' };
+const state = { unit: 'rub', editing: null };
 let ctx = null;   // { container, snapshots, trades, flows }
 
 const rerender = () => renderBalances(ctx.container, ctx.snapshots, ctx.trades, ctx.flows);
@@ -60,11 +60,13 @@ async function reload() {
 
 // ---------- snapshot form ----------
 
-function openSnapshotForm(existing) {
+// Creating a snapshot. Editing one happens in the table, in place — see
+// snapshotEditor.
+function openSnapshotForm() {
   const today = new Date().toISOString().slice(0, 10);
   const last = ctx.snapshots[ctx.snapshots.length - 1];
   // a new snapshot inherits the accounts of the previous one, emptied
-  const base = existing || {
+  const base = {
     date: today,
     usdRub: last ? last.usdRub : '',
     comment: '',
@@ -177,7 +179,7 @@ function openSnapshotForm(existing) {
 
   const modal = el('div', 'modal');
   modal.append(
-    el('h2', null, existing ? 'Отметка баланса' : 'Новая отметка баланса'),
+    el('h2', null, 'Новая отметка баланса'),
     el('p', 'hint', 'Введите текущий объём средств на каждом счёте. Курс нужен, чтобы свести всё в одну валюту.'),
     el('div', 'grid', null),
     el('div', 'section-head', 'Счета'),
@@ -206,8 +208,7 @@ function openSnapshotForm(existing) {
       comment: comment.value,
       accounts,
     };
-    if (existing) await window.api.balances.update(existing.id, payload);
-    else await window.api.balances.add(payload);
+    await window.api.balances.add(payload);
     backdrop.remove();
     reload();
   };
@@ -511,8 +512,107 @@ function accountsPanel(snap) {
   return panel;
 }
 
+// Editing a snapshot where it is read: the row opens into its own accounts,
+// each amount editable in place, with the total recomputing as you type.
+function snapshotEditor(snap) {
+  const box = el('div', 'snap-editor');
+  const rowsWrap = el('div', 'acc-rows');
+  const totalLine = el('div', 'acc-total');
+  let rows = [];
+
+  const rate = el('input');
+  rate.type = 'number'; rate.step = 'any'; rate.value = snap.usdRub ?? '';
+  const comment = el('input');
+  comment.type = 'text'; comment.value = snap.comment || '';
+  comment.placeholder = 'комментарий';
+
+  const readRows = () => rows.map((r) => ({
+    name: r.name.value.trim(),
+    amount: r.amount.value === '' ? 0 : Number(r.amount.value),
+    ccy: r.ccy.value,
+  }));
+
+  function recompute() {
+    const t = B().snapshotTotals({ usdRub: Number(rate.value) || 0, accounts: readRows() });
+    totalLine.innerHTML = '';
+    totalLine.append(
+      el('span', 'k', 'Итого'), el('span', 'v', rub(t.rub)),
+      el('span', 'sep', '·'), el('span', 'v', usd(t.usd)),
+    );
+  }
+
+  function renderRows(source) {
+    rowsWrap.innerHTML = '';
+    rows = source.map((acc, i) => {
+      const name = el('input');
+      name.type = 'text'; name.value = acc.name || ''; name.placeholder = 'счёт';
+      const amount = el('input');
+      amount.type = 'number'; amount.step = 'any'; amount.value = acc.amount ?? '';
+      amount.placeholder = 'сумма';
+      const ccy = el('select');
+      [['RUB', '₽'], ['USD', '$']].forEach(([v, l]) => ccy.append(new Option(l, v)));
+      ccy.value = acc.ccy === 'RUB' ? 'RUB' : 'USD';
+      const row = el('div', 'acc-row');
+      row.append(name, amount, ccy);
+      if (source.length > 1) {
+        const del = el('button', 'btn icon', '✕');
+        del.type = 'button';
+        del.title = 'Убрать счёт';
+        del.onclick = () => { renderRows(readRows().filter((_, j) => j !== i)); recompute(); };
+        row.append(del);
+      } else {
+        row.append(el('span', 'acc-spacer'));
+      }
+      [name, amount].forEach((inp) => inp.addEventListener('input', recompute));
+      ccy.addEventListener('change', recompute);
+      rowsWrap.append(row);
+      return { name, amount, ccy };
+    });
+    const add = el('button', 'btn ghost add-acc', '+ Счёт');
+    add.type = 'button';
+    add.onclick = () => { renderRows([...readRows(), { name: '', amount: '', ccy: 'USD' }]); recompute(); };
+    rowsWrap.append(add);
+  }
+
+  renderRows(snap.accounts || []);
+  rate.addEventListener('input', recompute);
+  recompute();
+
+  const meta = el('div', 'snap-meta');
+  const rateLabel = el('label', 'snap-field');
+  rateLabel.append(el('span', 'k', 'Курс USD/RUB'), rate);
+  const commentLabel = el('label', 'snap-field wide');
+  commentLabel.append(el('span', 'k', 'Комментарий'), comment);
+  meta.append(rateLabel, commentLabel);
+
+  const save = el('button', 'btn primary', 'Сохранить');
+  const cancel = el('button', 'btn ghost', 'Отмена');
+  const buttons = el('div', 'snap-buttons');
+  buttons.append(cancel, save);
+
+  cancel.onclick = () => { state.editing = null; rerender(); };
+  save.onclick = async () => {
+    const accounts = readRows().filter((a) => a.name);
+    if (!accounts.length) {
+      alert('Оставьте хотя бы один счёт с названием.');
+      return;
+    }
+    await window.api.balances.update(snap.id, {
+      accounts,
+      usdRub: Number(rate.value) || 0,
+      comment: comment.value,
+    });
+    state.editing = null;
+    reload();
+  };
+
+  box.append(meta, rowsWrap, totalLine, buttons);
+  return box;
+}
+
 function snapshotsTable(rows) {
   const panel = card('Все отметки', 'wide');
+  panel.append(el('div', 'card-hint', 'Нажмите на строку, чтобы поправить суммы по счетам прямо здесь.'));
   const table = el('table', 'mini-table');
   const thead = el('thead');
   const htr = el('tr');
@@ -520,7 +620,8 @@ function snapshotsTable(rows) {
   thead.append(htr);
   const tbody = el('tbody');
   [...rows].reverse().forEach((r) => {
-    const tr = el('tr');
+    const open = state.editing === r.id;
+    const tr = el('tr', 'snap-row' + (open ? ' open' : ''));
     tr.append(el('td', null, shortDate(r.date)));
     tr.append(el('td', 'num', String(r.usdRub || '—')));
     tr.append(el('td', null, (r.accounts || []).map((a) => a.name).join(' · ')));
@@ -530,12 +631,13 @@ function snapshotsTable(rows) {
     delta.textContent = r.deltaRub == null ? '—' : `${rub(r.deltaRub)} · ${pct1(r.deltaPct)}`;
     tr.append(delta);
     const act = el('td', 'num');
-    const edit = el('button', 'btn icon', '✎');
-    edit.title = 'Редактировать';
-    edit.onclick = () => openSnapshotForm(ctx.snapshots.find((s) => s.id === r.id));
+    const edit = el('button', 'btn icon', open ? '⌃' : '✎');
+    edit.title = open ? 'Свернуть' : 'Редактировать балансы';
+    edit.onclick = (e) => { e.stopPropagation(); state.editing = open ? null : r.id; rerender(); };
     const del = el('button', 'btn icon', '✕');
     del.title = 'Удалить';
-    del.onclick = async () => {
+    del.onclick = async (e) => {
+      e.stopPropagation();
       if (!confirm(`Удалить отметку от ${shortDate(r.date)}?`)) return;
       await window.api.balances.remove(r.id);
       reload();
@@ -544,7 +646,17 @@ function snapshotsTable(rows) {
     wrap.append(edit, del);
     act.append(wrap);
     tr.append(act);
+    tr.onclick = () => { state.editing = open ? null : r.id; rerender(); };
     tbody.append(tr);
+
+    if (open) {
+      const editTr = el('tr', 'snap-edit-row');
+      const cell = el('td');
+      cell.colSpan = 7;
+      cell.append(snapshotEditor(ctx.snapshots.find((s) => s.id === r.id)));
+      editTr.append(cell);
+      tbody.append(editTr);
+    }
   });
   table.append(thead, tbody);
   panel.append(table);
@@ -604,7 +716,7 @@ function renderBalances(container, snapshots, trades, flows) {
 
   const bar = el('div', 'period-bar');
   const addBtn = el('button', 'btn primary', '+ Отметка баланса');
-  addBtn.onclick = () => openSnapshotForm(null);
+  addBtn.onclick = () => openSnapshotForm();
   const addFlowBtn = el('button', 'btn ghost', '+ Ввод / вывод');
   addFlowBtn.onclick = () => openFlowForm(null);
   bar.append(addBtn, addFlowBtn);

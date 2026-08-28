@@ -799,3 +799,34 @@ canvas { display: block; width: 100%; }
   height: 1px; margin: 7px 0 5px;
   background: var(--line);
 }
+
+/* ---------- balances: editing a snapshot in place ---------- */
+.card-hint { margin: -4px 0 8px; font-size: 11.5px; color: var(--muted-2); }
+.snap-row { cursor: pointer; }
+.mini-table tbody tr.snap-row.open td { background: rgba(255,255,255,.04); }
+:root[data-theme="light"] .mini-table tbody tr.snap-row.open td { background: rgba(0,0,0,.04); }
+.snap-edit-row td { padding: 0 10px 14px; }
+.snap-editor {
+  padding: 14px 16px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.snap-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+.snap-field { display: flex; flex-direction: column; gap: 5px; min-width: 160px; }
+.snap-field.wide { flex: 1; min-width: 240px; }
+.snap-field .k {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
+}
+.snap-field input {
+  padding: 8px 11px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: var(--sans); font-size: 13px;
+}
+.snap-field input:focus { outline: none; border-color: var(--accent); }
+.snap-editor .acc-row input, .snap-editor .acc-row select { background: var(--surface); }
+.snap-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }

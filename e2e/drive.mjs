@@ -722,6 +722,70 @@ try {
   });
   check('the currency toggle switches the curve', toggled.includes('$:true'), toggled.join('|'));
 
+  // editing a snapshot's balances in place, without opening a modal
+  const inline = await page.evaluate(() => {
+    const table = [...document.querySelectorAll('.card')]
+      .find((c) => /все отметки/i.test(c.querySelector('.card-title').textContent));
+    const row = table.querySelector('tbody tr.snap-row');
+    row.click();
+    // the click re-renders the tab, so re-query instead of holding the old node
+    const editor = document.querySelector('.snap-editor');
+    return {
+      opened: !!editor,
+      modal: !!document.querySelector('.modal'),
+      accounts: editor ? [...editor.querySelectorAll('.acc-row')].map((r) => {
+        const inputs = r.querySelectorAll('input');
+        return `${inputs[0].value}=${inputs[1].value}`;
+      }) : [],
+      total: editor ? editor.querySelector('.acc-total').innerText.replace(/\n/g, ' ') : '',
+    };
+  });
+  check('clicking a snapshot row opens its balances in place, not in a modal',
+    inline.opened && !inline.modal, JSON.stringify(inline));
+  check('the editor is filled with that snapshot\'s accounts',
+    inline.accounts.some((a) => /MOEX=900000/.test(a)), inline.accounts.join('|'));
+
+  const edited = await page.evaluate(() => {
+    const editor = document.querySelector('.snap-editor');
+    const amount = editor.querySelectorAll('.acc-row')[0].querySelectorAll('input')[1];
+    amount.value = '1111000';
+    amount.dispatchEvent(new Event('input', { bubbles: true }));
+    const totalAfterTyping = editor.querySelector('.acc-total').innerText.replace(/\n/g, ' ');
+    [...editor.querySelectorAll('.snap-buttons .btn')].find((b) => /сохранить/i.test(b.textContent)).click();
+    return { totalAfterTyping };
+  });
+  check('the total recomputes while typing',
+    norm(edited.totalAfterTyping).includes('1111000') || norm(edited.totalAfterTyping).includes('1553000'),
+    edited.totalAfterTyping);
+
+  await page.waitForTimeout(400);
+  const saved = await page.evaluate(async () => {
+    const list = await window.api.balances.list();
+    const target = list.find((s) => s.date === '2026-08-20');
+    return {
+      amount: target.accounts.find((a) => a.name === 'MOEX').amount,
+      stillOpen: !!document.querySelector('.snap-editor'),
+      tableText: document.querySelector('.mini-table tbody').innerText.replace(/\n/g, ' | '),
+    };
+  });
+  check('the edited amount is persisted', saved.amount === 1111000, String(saved.amount));
+  check('the editor closes after saving', !saved.stillOpen, String(saved.stillOpen));
+  check('the table shows the new total', norm(saved.tableText).includes('1553000₽'), saved.tableText.slice(0, 160));
+
+  // cancel leaves the snapshot alone
+  const cancelled = await page.evaluate(async () => {
+    const row = document.querySelector('.mini-table tbody tr.snap-row');
+    row.click();
+    const editor = document.querySelector('.snap-editor');
+    const amount = editor.querySelectorAll('.acc-row')[0].querySelectorAll('input')[1];
+    amount.value = '1';
+    amount.dispatchEvent(new Event('input', { bubbles: true }));
+    [...editor.querySelectorAll('.snap-buttons .btn')].find((b) => /отмена/i.test(b.textContent)).click();
+    const list = await window.api.balances.list();
+    return list.find((s) => s.date === '2026-08-20').accounts.find((a) => a.name === 'MOEX').amount;
+  });
+  check('cancelling discards the edit', cancelled === 1111000, String(cancelled));
+
   // a deposit through the form: it must lift the journal line, not the profit
   const beforeFlow = await page.evaluate(() => document.querySelector('#view').innerText.replace(/\n/g, ' | '));
   await page.evaluate(() => [...document.querySelectorAll('.period-bar .btn')]

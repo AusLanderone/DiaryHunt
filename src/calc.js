@@ -25,7 +25,13 @@ function legRole(leg, index) {
   return (leg.role === 'mul' || leg.role === 'div') ? leg.role : (index === 0 ? 'div' : 'mul');
 }
 
-// spread = Π(multiplying prices) / Π(dividing prices) - 1, over one price field
+// spread = (Π multiplying prices − Π dividing prices) / their mid point.
+//
+// The source sheet measures against the mid price of the two legs, not against
+// the first one: on SILV that is the difference between −0,7467% and the
+// sheet's −0,7495%. Taking the mid keeps the measure symmetric — swapping the
+// legs only flips the sign — and on a triangle it still lands on the ratio the
+// TradingView formula gives (+0,0679% against +0,0679%).
 function spreadOver(trade, field) {
   if (!trade.legs || trade.legs.length < 2) return null;
   let num = 1, den = 1, seenDen = false;
@@ -37,8 +43,9 @@ function spreadOver(trade, field) {
     if (Number.isNaN(price)) return null;
     if (legRole(leg, i) === 'div') { den *= price; seenDen = true; } else { num *= price; }
   }
-  if (!seenDen || den === 0) return null;
-  return num / den - 1;
+  const mid = (num + den) / 2;
+  if (!seenDen || den === 0 || mid === 0) return null;   // an empty side is not a spread
+  return (num - den) / mid;
 }
 
 const entrySpread = (trade) => spreadOver(trade, 'entryPrice');

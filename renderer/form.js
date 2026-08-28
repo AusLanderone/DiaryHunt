@@ -68,6 +68,15 @@ async function openForm(trade, onSaved) {
   const tag = el('input', { type: 'text', list: 'dh-taglist', value: t.tag || '', placeholder: 'впиши свой или выбери ▾', autocomplete: 'off' });
   const exList = el('datalist', { id: 'dh-exlist' }, cfg.exchanges.map((x) => new Option(x, x)));
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
+  // "↻ курс" fills the field from MOEX (CBR as fallback); typing over it still wins
+  const rateBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↻ курс')]);
+  rateBtn.title = 'Подтянуть актуальный курс: MOEX USDRUBF, при недоступности — ЦБ РФ';
+  const rateNote = el('span', { class: 'field-note' });
+  const usdRubField = el('label', {}, [
+    txt('Курс USD/RUB'),
+    el('div', { class: 'field-row' }, [usdRub, rateBtn]),
+    rateNote,
+  ]);
   const rate = el('input', { type: 'number', step: 'any', value: t.payoutRate != null ? t.payoutRate * 100 : 6 });
   const comment = el('textarea', {}, [txt(t.comment || '')]);
 
@@ -119,17 +128,45 @@ async function openForm(trade, onSaved) {
     i.addEventListener('input', recompute));
   payoutAuto.addEventListener('change', recompute);
 
+  // fetching only prefills the input; the field stays a plain editable number,
+  // and typing in it clears the source note so it never claims a stale origin
+  let applyingRate = false;
+  usdRub.addEventListener('input', () => { if (!applyingRate) rateNote.textContent = ''; });
+  rateBtn.addEventListener('click', async () => {
+    rateBtn.disabled = true;
+    rateNote.className = 'field-note';
+    rateNote.textContent = 'запрашиваю…';
+    try {
+      const r = await window.api.rates.usdRub();
+      if (!r.ok) {
+        rateNote.className = 'field-note err';
+        rateNote.textContent = r.error || 'не удалось получить курс';
+        return;
+      }
+      applyingRate = true;
+      usdRub.value = r.rate;
+      usdRub.dispatchEvent(new Event('input', { bubbles: true }));
+      applyingRate = false;
+      rateNote.textContent = `${r.source}${r.time ? ', ' + r.time : r.date ? ', ' + r.date : ''}`;
+    } catch (err) {
+      rateNote.className = 'field-note err';
+      rateNote.textContent = String(err.message || err);
+    } finally {
+      rateBtn.disabled = false;
+    }
+  });
+
   const save = el('button', { class: 'btn primary' }, [txt('Сохранить')]);
   const cancel = el('button', { class: 'btn ghost' }, [txt('Отмена')]);
 
   const backdrop = el('div', { class: 'modal-backdrop' }, [
     el('div', { class: 'modal' }, [
       el('h2', {}, [txt(trade ? `Сделка №${trade.num}` : 'Новая сделка')]),
-      el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
+      el('p', { class: 'hint' }, [txt('Курс, дата и пейаут подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
         el('label', {}, [txt('Тип'), type, typeList]), field('Тикер', ticker),
-        el('label', {}, [txt('Тег'), tag, tagList]), field('Курс USD/RUB', usdRub),
+        el('label', {}, [txt('Тег'), tag, tagList]), usdRubField,
         field('Ставка пейаута, %', rate), payoutField,
         field('Комментарий', comment, 'full'),
       ]),

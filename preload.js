@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('api', {
     getSettings: () => ipcRenderer.invoke('config:getSettings'),
     setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
+  rates: {
+    usdRub: () => ipcRenderer.invoke('rates:usdRub'),
+  },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
   setZoom: (factor) => webFrame.setZoomFactor(factor), // proper page zoom (fills viewport)
   db: {

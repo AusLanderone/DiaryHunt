@@ -85,33 +85,72 @@
       }
     };
 
-    // --- Синхронизация: папка облачного клиента ---
-    const syncPath = el('div', { class: 'sync-path' }, [txt('—')]);
+    // --- Синхронизация: одна ссылка на облако ---
+    const syncUrl = el('input', { type: 'text', class: 'sync-url',
+      placeholder: 'https://script.google.com/macros/s/…/exec' });
     const syncInfo = el('div', { class: 'sync-info' }, [txt('')]);
-    const chooseBtn = el('button', { class: 'btn ghost' }, [txt('Выбрать папку')]);
+    const saveLinkBtn = el('button', { class: 'btn primary' }, [txt('Подключить')]);
     const offBtn = el('button', { class: 'btn ghost' }, [txt('Отключить')]);
     const pushBtn = el('button', { class: 'btn ghost' }, [txt('Выгрузить сейчас')]);
     const pullBtn = el('button', { class: 'btn ghost' }, [txt('Загрузить из облака')]);
+    const howBtn = el('button', { class: 'btn ghost' }, [txt('Как получить ссылку')]);
 
     function showSync(state) {
       if (!state) return;
-      syncPath.textContent = state.dir || 'папка не выбрана';
+      if (document.activeElement !== syncUrl) syncUrl.value = state.url || '';
       const bits = [];
+      if (state.error) bits.push(`ошибка: ${state.error}`);
+      else if (state.note) bits.push(state.note);
       if (state.lastPushAt) bits.push(`выгружено ${new Date(state.lastPushAt).toLocaleString('ru-RU')}`);
       if (state.lastPullAt) bits.push(`загружено ${new Date(state.lastPullAt).toLocaleString('ru-RU')}`);
-      if (state.error) bits.push(`ошибка: ${state.error}`);
-      syncInfo.textContent = bits.join(' · ') || 'обмена ещё не было';
+      syncInfo.className = 'sync-info' + (state.error ? ' err' : '');
+      syncInfo.textContent = bits.join(' · ') || (state.enabled ? 'обмена ещё не было' : 'облако не подключено');
       [offBtn, pushBtn, pullBtn].forEach((b) => { b.disabled = !state.enabled; });
+      pushBtn.disabled = !state.canWrite;
     }
-    chooseBtn.onclick = async () => showSync(await window.api.sync.choose());
+    saveLinkBtn.onclick = async () => {
+      syncInfo.textContent = 'проверяю ссылку…';
+      showSync(await window.api.sync.setLink(syncUrl.value));
+    };
     offBtn.onclick = async () => showSync(await window.api.sync.disable());
-    pushBtn.onclick = async () => showSync(await window.api.sync.push());
+    pushBtn.onclick = async () => {
+      syncInfo.textContent = 'выгружаю…';
+      showSync(await window.api.sync.push());
+    };
     pullBtn.onclick = async () => {
       if (!confirm('Данные из облака полностью заменят текущие сделки и балансы. Прежние уйдут в резервную копию. Продолжить?')) return;
+      syncInfo.textContent = 'загружаю…';
       showSync(await window.api.sync.pull());
       if (window.diary) window.diary.refresh();
     };
+    howBtn.onclick = async () => {
+      const code = await window.api.sync.scriptCode();
+      const box = el('div', { class: 'modal how-modal' }, [
+        el('h2', {}, [txt('Ссылка на облако за две минуты')]),
+        el('ol', { class: 'how-steps' }, [
+          el('li', {}, [txt('Откройте script.google.com и создайте новый проект')]),
+          el('li', {}, [txt('Замените весь код на этот и сохраните:')]),
+        ]),
+        el('pre', { class: 'how-code' }, [txt(code)]),
+        el('ol', { class: 'how-steps', start: '3' }, [
+          el('li', {}, [txt('Развернуть → Новое развёртывание → тип «Веб-приложение»')]),
+          el('li', {}, [txt('Выполнять от имени: я. Доступ: все (это нужно, чтобы приложение могло писать)')]),
+          el('li', {}, [txt('Скопируйте выданный URL вида …/macros/s/…/exec и вставьте его сюда')]),
+        ]),
+        el('p', { class: 'hint' }, [txt('База ляжет файлом diaryhunt-db.json на ваш Google Диск. На втором устройстве вставьте ту же ссылку.')]),
+        el('div', { class: 'modal-buttons' }, []),
+      ]);
+      const copy = el('button', { class: 'btn ghost' }, [txt('Скопировать код')]);
+      const close = el('button', { class: 'btn primary' }, [txt('Понятно')]);
+      copy.onclick = () => { navigator.clipboard.writeText(code); copy.textContent = 'Скопировано'; };
+      box.querySelector('.modal-buttons').append(copy, close);
+      const layer = el('div', { class: 'modal-backdrop' }, [box]);
+      close.onclick = () => layer.remove();
+      layer.addEventListener('click', (e) => { if (e.target === layer) layer.remove(); });
+      document.body.appendChild(layer);
+    };
     window.api.sync.status().then(showSync);
+    window.api.sync.onState(showSync);
 
     const backdrop = el('div', { class: 'modal-backdrop' }, [
       el('div', { class: 'modal settings-modal' }, [
@@ -125,10 +164,10 @@
         el('div', { class: 'section-head' }, [txt('Данные')]),
         el('p', { class: 'hint' }, [txt('Полный бэкап в JSON: сделки, отметки баланса, движения средств, справочники и настройки — и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
         el('div', { class: 'data-row' }, [expBtn, impBtn, csvBtn]),
-        el('div', { class: 'section-head' }, [txt('Синхронизация')]),
-        el('p', { class: 'hint' }, [txt('Укажите папку внутри Google Диска для компьютера, Яндекс.Диска, OneDrive или Dropbox. Приложение пишет туда один файл после каждого изменения и читает его при запуске — облако само разносит данные между устройствами.')]),
-        syncPath,
-        el('div', { class: 'data-row' }, [chooseBtn, offBtn, pushBtn, pullBtn]),
+        el('div', { class: 'section-head' }, [txt('Синхронизация с облаком')]),
+        el('p', { class: 'hint' }, [txt('Вставьте ссылку веб-приложения Google Apps Script — база будет храниться файлом на вашем Google Диске: выгружаться после каждого изменения и подтягиваться при запуске. Та же ссылка на другом устройстве даёт те же данные.')]),
+        syncUrl,
+        el('div', { class: 'data-row' }, [saveLinkBtn, howBtn, pushBtn, pullBtn, offBtn]),
         syncInfo,
         el('div', { class: 'modal-buttons' }, [done]),
       ]),

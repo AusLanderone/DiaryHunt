@@ -17,7 +17,7 @@ test('decide — no folder means synchronisation is simply off', () => {
 test('decide — an empty folder gets the local database', () => {
   const d = sync.decide({ dir: 'G:/drive', cloud: null, state: { lastPushAt: T.old } });
   assert.strictEqual(d.action, 'push');
-  assert.match(d.reason, /нет файла|впервые/i);
+  assert.match(d.reason, /пусто|впервые/i);
 });
 
 test('decide — a newer cloud file wins and is pulled whole', () => {

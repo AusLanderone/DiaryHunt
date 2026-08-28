@@ -63,12 +63,13 @@ function renderSync(state) {
   badge.querySelector('.txt').textContent =
     state.phase === 'off' ? phase.text : `${phase.text}${at ? ' ' + hhmm(at) : ''}`;
   const lines = [];
-  if (state.dir) lines.push(`Папка: ${state.dir}`);
+  if (state.url) lines.push(`Облако: ${state.url}`);
+  if (state.note && !state.error) lines.push(state.note);
   if (state.lastPushAt) lines.push(`Выгружено: ${new Date(state.lastPushAt).toLocaleString('ru-RU')}`);
   if (state.lastPullAt) lines.push(`Загружено: ${new Date(state.lastPullAt).toLocaleString('ru-RU')}`);
   if (state.device) lines.push(`Последняя версия с устройства: ${state.device}`);
   if (state.error) lines.push(`Ошибка: ${state.error}`);
-  if (!state.enabled) lines.push('Нажмите, чтобы выбрать папку облачного клиента');
+  if (!state.enabled) lines.push('Нажмите, чтобы вставить ссылку на облако');
   badge.title = lines.join('\n');
   // a pull replaces the local data, so what is on screen is stale
   if (state.phase === 'pulled') refresh();

@@ -137,6 +137,13 @@ try {
     };
   });
   check('one row per trade, not per leg', journal.rows === 2, `${journal.rows} rows`);
+  const legChips = await page.evaluate(() => [...document.querySelectorAll('.trade-row .leg-chip')]
+    .map((c) => ({ cls: c.className, arrow: c.querySelector('.dir').textContent,
+      size: getComputedStyle(c.querySelector('.dir')).fontSize })));
+  check('leg chips are colour-coded by direction and carry a readable arrow',
+    legChips.every((c) => (c.cls.includes('long') || c.cls.includes('short'))
+      && ['↑', '↓'].includes(c.arrow) && parseFloat(c.size) >= 14),
+    JSON.stringify(legChips.slice(0, 2)));
   check('trades are grouped under their month', journal.months.length === 1
     && /август 2026/i.test(journal.months[0]), journal.months.join('|'));
   // default sort is newest first, so the top row is whichever trade has the highest №

@@ -268,8 +268,14 @@ header {
   background: var(--surface-2);
   font-size: 11.5px;
 }
+/* the direction is the point of the chip, so the whole chip carries its colour */
+.leg-chip.long { background: color-mix(in srgb, var(--pos) 16%, var(--surface-2)); }
+.leg-chip.short { background: color-mix(in srgb, var(--neg) 16%, var(--surface-2)); }
 .leg-chip .ex { color: var(--text); letter-spacing: 0.02em; }
-.leg-chip .dir { font-size: 12px; font-weight: 700; }
+.leg-chip .dir {
+  font-size: 15px; font-weight: 800; line-height: 1;
+  text-shadow: 0 0 10px currentColor;
+}
 .leg-chip .dir.pos { color: var(--pos); }
 .leg-chip .dir.neg { color: var(--neg); }
 .trade-row .legs .vs { color: var(--muted-2); font-size: 11px; }

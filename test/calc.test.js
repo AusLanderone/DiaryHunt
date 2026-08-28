@@ -119,33 +119,61 @@ test('estimatePayout: null when no MOEX leg present', () => {
   ] }, 0.06), null);
 });
 
-// Swap — the overnight financing charge. Entered per leg, in roubles, next to
-// that leg's fee; the trade's swap is the sum of its legs.
+// Swap — the overnight financing charge, entered per leg in that leg's own
+// currency: roubles on MOEX, dollars everywhere else (FOREX, crypto venues).
 const legSwap = (t, a, b) => ({
   ...t,
-  legs: [{ ...t.legs[0], swapRub: a }, { ...t.legs[1], swapRub: b }],
+  legs: [{ ...t.legs[0], swap: a }, { ...t.legs[1], swap: b }],
 });
 
-test('swapTotalRub — sums the per-leg swap', () => {
-  near(calc.swapTotalRub(legSwap(trade1, -300, -120)), -420);
+test('legSwapRub — a MOEX leg swap is already in roubles', () => {
+  const moexLeg = { exchange: 'MOEX', swap: -300 };
+  near(calc.legSwapRub(moexLeg, 84), -300);
+});
+
+test('legSwapRub — a non-MOEX leg swap is in dollars, converted at the trade rate', () => {
+  near(calc.legSwapRub({ exchange: 'FOREX', swap: -5 }, 84), -420);
+  near(calc.legSwapRub({ exchange: 'BYBIT', swap: 2.5 }, 80), 200);
+});
+
+test('legSwapRub — exchange match ignores case and padding', () => {
+  near(calc.legSwapRub({ exchange: ' moex ', swap: -300 }, 84), -300);
+});
+
+test('swapTotalRub — mixes a rouble leg and a dollar leg', () => {
+  // trade1 rate is 83.70: MOEX -300 ₽ plus FOREX -$4 = -300 - 334.80
+  const t = { ...trade1 };
+  t.legs = [{ ...t.legs[0], exchange: 'MOEX', swap: -300 },
+    { ...t.legs[1], exchange: 'FOREX', swap: -4 }];
+  near(calc.swapTotalRub(t), -300 - 4 * 83.70);
+});
+
+test('swapTotalRub — no swap anywhere is zero', () => {
   near(calc.swapTotalRub(trade1), 0);
+  near(calc.swapTotalRub(legSwap(trade1, null, '')), 0);
 });
 
-test('netProfitRub — the legs\' swap lands in the net profit', () => {
-  near(calc.netProfitRub(legSwap(trade1, -300, -120)), calc.netProfitRub(trade1) - 420);
-  near(calc.netProfitRub(legSwap(trade1, 100, 50)), calc.netProfitRub(trade1) + 150);
+test('netProfitRub — the legs\' swap lands in the net profit, each in its own currency', () => {
+  const t = { ...trade1 };
+  t.legs = [{ ...t.legs[0], exchange: 'MOEX', swap: -300 },
+    { ...t.legs[1], exchange: 'FOREX', swap: -4 }];
+  near(calc.netProfitRub(t), calc.netProfitRub(trade1) - 300 - 4 * 83.70);
 });
 
 test('netProfitRub — trades saved before swap existed still compute', () => {
-  assert.ok(!('swapRub' in trade1.legs[0]));
   near(calc.netProfitRub(trade1), 1044.40, 0.05);
-  near(calc.netProfitRub(legSwap(trade1, null, '')), 1044.40, 0.05);
 });
 
-test('computeTrade — reports swap per leg and for the trade', () => {
-  const c = calc.computeTrade(legSwap(trade1, -300, -120));
-  near(c.swapTotalRub, -420);
+test('computeTrade — reports each leg swap in roubles plus the trade total', () => {
+  const t = { ...trade1 };
+  t.legs = [{ ...t.legs[0], exchange: 'MOEX', swap: -300 },
+    { ...t.legs[1], exchange: 'FOREX', swap: -4 }];
+  const c = calc.computeTrade(t);
   near(c.legs[0].swapRub, -300);
-  near(c.legs[1].swapRub, -120);
-  near(calc.computeTrade(trade1).swapTotalRub, 0);
+  near(c.legs[1].swapRub, -4 * 83.70);
+  near(c.swapTotalRub, -300 - 4 * 83.70);
+});
+
+test('legSwapRub — the older swapRub field is still honoured as roubles', () => {
+  near(calc.legSwapRub({ exchange: 'FOREX', swapRub: -420 }, 84), -420);
 });

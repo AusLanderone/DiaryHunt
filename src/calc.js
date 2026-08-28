@@ -49,9 +49,21 @@ function feeTotalRub(trade) {
   return trade.legs.reduce((s, leg) => s + Number(leg.feeRub || 0), 0);
 }
 
-// Overnight financing, entered per leg in roubles next to that leg's fee.
+// Overnight financing, entered per leg in that leg's own currency: roubles on
+// MOEX, dollars on every other venue. `swapRub` is the older rouble-only field
+// and is still read as roubles whatever the exchange.
+const isRubLeg = (leg) => String(leg.exchange || '').trim().toUpperCase() === 'MOEX';
+
+function legSwapRub(leg, usdRub) {
+  if (leg.swapRub !== undefined && leg.swapRub !== null && leg.swapRub !== '') {
+    return Number(leg.swapRub) || 0;
+  }
+  const raw = Number(leg.swap || 0);
+  return isRubLeg(leg) ? raw : raw * (Number(usdRub) || 0);
+}
+
 function swapTotalRub(trade) {
-  return trade.legs.reduce((s, leg) => s + Number(leg.swapRub || 0), 0);
+  return trade.legs.reduce((s, leg) => s + legSwapRub(leg, trade.usdRub), 0);
 }
 
 function pnlNet(trade) {
@@ -109,7 +121,7 @@ function computeTrade(trade) {
       start: legPositionStart(leg),
       end: legPositionEnd(leg),
       gross: legGross(leg),
-      swapRub: Number(leg.swapRub || 0),
+      swapRub: legSwapRub(leg, trade.usdRub),
     })),
     entrySpread: entrySpread(trade),
     exitSpread: exitSpread(trade),
@@ -128,7 +140,8 @@ function computeTrade(trade) {
 const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
-  grossTotal, feeTotalRub, swapTotalRub, pnlNet, pnlRub, pnlNetPct, netProfitRub,
+  grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
+  pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;

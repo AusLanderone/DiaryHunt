@@ -26,15 +26,23 @@ function legInputs(title, leg, defaultEx) {
   const units = el('input', { type: 'number', step: 'any', value: leg.units ?? '' });
   const exit = el('input', { type: 'number', step: 'any', value: leg.exitPrice ?? '' });
   const fee = el('input', { type: 'number', step: 'any', value: leg.feeRub ?? '' });
-  // swap sits with the fee: both are per-leg rouble costs of holding this side
-  const swap = el('input', { type: 'number', step: 'any', value: leg.swapRub ?? '' });
+  // swap sits with the fee, but in the leg's own currency: ₽ on MOEX, $ elsewhere
+  const swap = el('input', { type: 'number', step: 'any', value: leg.swap ?? leg.swapRub ?? '' });
+  const swapLabel = el('label', {}, [txt('Своп ₽'), swap]);
+  const syncSwapCurrency = () => {
+    const rub = window.calc.isRubLeg({ exchange: ex.value });
+    swapLabel.firstChild.nodeValue = rub ? 'Своп ₽' : 'Своп $';
+    swap.title = rub ? 'Своп по ноге, в рублях (MOEX)' : 'Своп по ноге, в долларах — пересчитается по курсу сделки';
+  };
+  ex.addEventListener('input', syncSwapCurrency);
+  syncSwapCurrency();
   const box = el('div', { class: 'leg-box' }, [
     el('div', { class: 'leg-head' }, [txt(title)]),
     el('div', { class: 'grid' }, [
       field('Биржа', ex), field('Сделка', side),
       field('Цена вход', entry), field('Кол-во единиц', units),
       field('Цена выход', exit), field('Комиссия ₽', fee),
-      field('Своп ₽', swap),
+      swapLabel,
     ]),
   ]);
   return { box, read: () => ({
@@ -43,7 +51,7 @@ function legInputs(title, leg, defaultEx) {
     units: Number(units.value),
     exitPrice: exit.value === '' ? null : Number(exit.value),
     feeRub: fee.value === '' ? 0 : Number(fee.value),
-    swapRub: swap.value === '' ? 0 : Number(swap.value),
+    swap: swap.value === '' ? 0 : Number(swap.value),
   }), inputs: [ex, side, entry, units, exit, fee, swap] };
 }
 

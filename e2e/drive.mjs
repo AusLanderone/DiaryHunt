@@ -203,6 +203,26 @@ try {
     return { afterSearch, afterOpen, emptyNote, restored: document.querySelectorAll('.trade-row').length };
   });
   check('search narrows the journal to matching trades', filtered.afterSearch === 1, JSON.stringify(filtered));
+
+  // type is a first-class dimension, like the tag: a chip in the row and a filter
+  const typeUi = await page.evaluate(() => {
+    const sel = [...document.querySelectorAll('.journal-bar .sel')]
+      .find((s) => /все типы/i.test(s.options[0].textContent));
+    const chips = [...document.querySelectorAll('.trade-row .tag .tag-chip')].map((c) => c.textContent);
+    const before = document.querySelectorAll('.trade-row').length;
+    sel.value = 'Фьючи';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    const afterType = document.querySelectorAll('.trade-row').length;
+    const sel2 = [...document.querySelectorAll('.journal-bar .sel')]
+      .find((s) => /все типы/i.test(s.options[0].textContent));
+    sel2.value = 'all';
+    sel2.dispatchEvent(new Event('change', { bubbles: true }));
+    return { chips, before, afterType, options: [...sel.options].map((o) => o.textContent) };
+  });
+  check('type shows as a chip beside the tag',
+    typeUi.chips.includes('Фьючи') && typeUi.chips.includes('Схождение'), typeUi.chips.join('|'));
+  check('type has its own filter listing the types in use',
+    typeUi.options.includes('Фьючи') && typeUi.afterType === typeUi.before, JSON.stringify(typeUi));
   check('an empty result explains itself instead of showing a blank page',
     filtered.afterOpen === 0 && /ничего не подошло/i.test(filtered.emptyNote), JSON.stringify(filtered));
   check('clearing the filter brings every trade back', filtered.restored === 2, JSON.stringify(filtered));

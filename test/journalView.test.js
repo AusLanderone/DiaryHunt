@@ -193,3 +193,22 @@ test('sortTrades — a cleared sort falls back to newest trade first', () => {
   const list = [trade({ num: 2 }), trade({ num: 5 }), trade({ num: 1 })];
   assert.deepStrictEqual(nums(jv.sortTrades(list, null, 'desc')), [5, 2, 1]);
 });
+
+test('filterTrades — type filter works like the tag filter', () => {
+  const list = [
+    trade({ num: 1, type: 'Фьючи' }),
+    trade({ num: 2, type: 'Крипто' }),
+    trade({ num: 3, type: 'Фьючи' }),
+  ];
+  assert.deepStrictEqual(nums(jv.filterTrades(list, { ...ALL, type: 'Крипто' })), [2]);
+  assert.deepStrictEqual(nums(jv.filterTrades(list, { ...ALL, type: 'all' })), [1, 2, 3]);
+});
+
+test('filterTrades — type and tag narrow together', () => {
+  const list = [
+    trade({ num: 1, type: 'Фьючи', tag: 'Схождение' }),
+    trade({ num: 2, type: 'Фьючи', tag: 'Раскор' }),
+    trade({ num: 3, type: 'Крипто', tag: 'Раскор' }),
+  ];
+  assert.deepStrictEqual(nums(jv.filterTrades(list, { ...ALL, type: 'Фьючи', tag: 'Раскор' })), [2]);
+});

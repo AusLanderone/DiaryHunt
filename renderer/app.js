@@ -24,8 +24,10 @@ function showStats() {
 
 async function showBalances() {
   setActive('tab-balances');
-  const snapshots = await window.api.balances.list();
-  window.balancesView.renderBalances(view, snapshots, trades);
+  const [snapshots, flows] = await Promise.all([
+    window.api.balances.list(), window.api.flows.list(),
+  ]);
+  window.balancesView.renderBalances(view, snapshots, trades, flows);
 }
 
 function setActive(id) {

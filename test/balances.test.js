@@ -100,3 +100,72 @@ test('journalLine — starts at the first snapshot and adds profit closed by eac
 test('journalLine — without snapshots there is nothing to anchor to', () => {
   assert.deepStrictEqual(B.journalLine([], [trade('2026-08-05', 1000)]), []);
 });
+
+// ---- deposits and withdrawals ----
+
+const flow = (over = {}) => ({
+  id: 'f1', date: '2026-08-05', account: 'MOEX', amount: 100000, ccy: 'RUB',
+  kind: 'in', usdRub: 80, comment: '', ...over,
+});
+
+test('flowRub — a deposit is positive, a withdrawal negative', () => {
+  near(B.flowRub(flow()), 100000);
+  near(B.flowRub(flow({ kind: 'out' })), -100000);
+});
+
+test('flowRub — a dollar movement converts at its own rate', () => {
+  near(B.flowRub(flow({ amount: 1000, ccy: 'USD', usdRub: 85 })), 85000);
+  near(B.flowRub(flow({ amount: 1000, ccy: 'USD', usdRub: 85, kind: 'out' })), -85000);
+});
+
+test('flowsUpTo — nets everything dated on or before the given day', () => {
+  const flows = [
+    flow({ id: 'a', date: '2026-08-01', amount: 200000 }),
+    flow({ id: 'b', date: '2026-08-10', amount: 50000, kind: 'out' }),
+    flow({ id: 'c', date: '2026-08-20', amount: 30000 }),
+  ];
+  near(B.flowsUpTo(flows, '2026-08-01'), 200000);
+  near(B.flowsUpTo(flows, '2026-08-15'), 150000);
+  near(B.flowsUpTo(flows, '2026-08-31'), 180000);
+  near(B.flowsUpTo(flows, '2026-07-01'), 0);
+  near(B.flowsUpTo([], '2026-08-31'), 0);
+});
+
+test('flowTotals — deposits, withdrawals and the net, all in roubles', () => {
+  const t = B.flowTotals([
+    flow({ amount: 200000 }),
+    flow({ amount: 50000, kind: 'out' }),
+    flow({ amount: 1000, ccy: 'USD', usdRub: 85 }),
+  ]);
+  near(t.in, 200000 + 85000);
+  near(t.out, -50000);
+  near(t.net, 235000);
+});
+
+test('flowTotals — nothing moved is three zeroes, not NaN', () => {
+  const t = B.flowTotals([]);
+  near(t.in, 0); near(t.out, 0); near(t.net, 0);
+});
+
+test('journalLine — deposits lift the journal line so the curves stay comparable', () => {
+  const snaps = [
+    snap({ id: 'a', date: '2026-08-01', accounts: [{ name: 'MOEX', amount: 1000000, ccy: 'RUB' }] }),
+    snap({ id: 'b', date: '2026-08-20', accounts: [{ name: 'MOEX', amount: 1400000, ccy: 'RUB' }] }),
+  ];
+  const trades = [trade('2026-08-05', 250000)];
+  const flows = [flow({ date: '2026-08-10', amount: 150000 })];
+  const line = B.journalLine(snaps, trades, flows);
+  near(line[0], 1000000);
+  near(line[1], 1000000 + 250000 + 150000);
+});
+
+test('journalLine — a withdrawal lowers it, and no flows behave as before', () => {
+  const snaps = [
+    snap({ id: 'a', date: '2026-08-01', accounts: [{ name: 'MOEX', amount: 1000000, ccy: 'RUB' }] }),
+    snap({ id: 'b', date: '2026-08-20', accounts: [{ name: 'MOEX', amount: 800000, ccy: 'RUB' }] }),
+  ];
+  const trades = [trade('2026-08-05', 100000)];
+  near(B.journalLine(snaps, trades, [flow({ date: '2026-08-12', amount: 300000, kind: 'out' })])[1],
+    1000000 + 100000 - 300000);
+  near(B.journalLine(snaps, trades)[1], 1100000);
+});

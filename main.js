@@ -25,6 +25,10 @@ function registerIpc() {
   ipcMain.handle('balances:add', (_e, input) => balanceStore.add(input));
   ipcMain.handle('balances:update', (_e, id, patch) => balanceStore.update(id, patch));
   ipcMain.handle('balances:remove', (_e, id) => balanceStore.remove(id));
+  ipcMain.handle('flows:list', () => balanceStore.listFlows());
+  ipcMain.handle('flows:add', (_e, input) => balanceStore.addFlow(input));
+  ipcMain.handle('flows:update', (_e, id, patch) => balanceStore.updateFlow(id, patch));
+  ipcMain.handle('flows:remove', (_e, id) => balanceStore.removeFlow(id));
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
@@ -73,6 +77,7 @@ function registerIpc() {
       app: 'DiaryHunt', schema: 1, exportedAt: new Date().toISOString(),
       trades: store.list(),
       balances: balanceStore.list(),
+      cashflows: balanceStore.listFlows(),
       config: {
         exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types, tickers: cfg.tickers,
         settings: config.getSettings(),
@@ -102,6 +107,7 @@ function registerIpc() {
     // balance snapshots are optional: backups made before the section existed
     // simply have none, and the current ones are left alone
     if (Array.isArray(parsed.balances)) balanceStore.replaceAll(parsed.balances);
+    if (Array.isArray(parsed.cashflows)) balanceStore.replaceAllFlows(parsed.cashflows);
     if (parsed.config) config.importAll(parsed.config);
     return { imported: true, count: parsed.trades.length };
   });

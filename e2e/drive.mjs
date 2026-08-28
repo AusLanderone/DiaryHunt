@@ -722,6 +722,65 @@ try {
   });
   check('the currency toggle switches the curve', toggled.includes('$:true'), toggled.join('|'));
 
+  // a deposit through the form: it must lift the journal line, not the profit
+  const beforeFlow = await page.evaluate(() => document.querySelector('#view').innerText.replace(/\n/g, ' | '));
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .btn')]
+    .find((b) => /ввод \/ вывод/i.test(b.textContent)).click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const flowForm = await page.evaluate(() => {
+    const modal = document.querySelector('.modal');
+    const set = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const labelled = (re) => [...modal.querySelectorAll('label')].find((l) => re.test(l.textContent));
+    set(labelled(/дата/i).querySelector('input'), '2026-08-10');
+    set(labelled(/счёт/i).querySelector('input'), 'MOEX');
+    set(labelled(/сумма/i).querySelector('input'), 200000);
+    const dir = labelled(/направление/i).querySelector('select');
+    // the datalist sits at the end of the modal, not inside the label
+    const accounts = [...document.getElementById('dh-acclist').options].map((o) => o.value);
+    return { preview: modal.querySelector('.acc-total').innerText.replace(/\n/g, ' '),
+      directions: [...dir.options].map((o) => o.textContent), accounts };
+  });
+  check('the movement form previews what will land on the accounts',
+    norm(flowForm.preview).includes('200000₽'), flowForm.preview);
+  check('it offers both directions', flowForm.directions.length === 2
+    && /ввод/i.test(flowForm.directions[0]) && /вывод/i.test(flowForm.directions[1]), flowForm.directions.join('|'));
+  check('the account field suggests accounts already used', flowForm.accounts.includes('MOEX'),
+    flowForm.accounts.join('|'));
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForSelector('.metrics', { timeout: 8000 });
+  const afterFlow = await page.evaluate(() => ({
+    text: document.querySelector('#view').innerText.replace(/\n/g, ' | '),
+    flowRows: [...document.querySelectorAll('.card')]
+      .find((c) => /ввод и вывод/i.test(c.querySelector('.card-title').textContent))
+      .querySelectorAll('tbody tr').length,
+    drift: [...document.querySelectorAll('.metric')]
+      .find((m) => /расхождение/i.test(m.innerText)).innerText.replace(/\n/g, ' '),
+  }));
+  check('the movement lands in its own table', afterFlow.flowRows === 1, String(afterFlow.flowRows));
+  check('«Заведено» reports the deposit', norm(afterFlow.text).includes('200000₽'), afterFlow.text.slice(0, 200));
+  check('the drift metric changes once the transfer is known',
+    afterFlow.drift !== beforeFlow, afterFlow.drift);
+
+  const flowMath = await page.evaluate(async () => {
+    const [snaps, flows, trades] = await Promise.all([
+      window.api.balances.list(), window.api.flows.list(), window.api.trades.list(),
+    ]);
+    const withFlows = window.balances.journalLine(snaps, trades, flows);
+    const without = window.balances.journalLine(snaps, trades, []);
+    return { withFlows, without, net: window.balances.flowTotals(flows).net };
+  });
+  check('a 200 000 ₽ deposit lifts the journal line by exactly that',
+    Math.abs((flowMath.withFlows[1] - flowMath.without[1]) - 200000) < 0.5,
+    JSON.stringify(flowMath));
+
+  const flowsCleaned = await page.evaluate(async () => {
+    for (const f of await window.api.flows.list()) await window.api.flows.remove(f.id);
+    return (await window.api.flows.list()).length;
+  });
+  check('movements can be removed', flowsCleaned === 0, String(flowsCleaned));
+
   // delete the snapshots again
   const cleaned = await page.evaluate(async () => {
     const list = await window.api.balances.list();

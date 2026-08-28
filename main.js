@@ -2,15 +2,17 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { createStore } = require('./src/store');
+const { createBalanceStore } = require('./src/balanceStore');
 const rates = require('./src/rates');
 const { createConfig } = require('./src/config');
 const { tradesToCsv } = require('./src/export');
 
-let store, config;
+let store, balanceStore, config;
 
 function initData() {
   const dataDir = app.getPath('userData');
   store = createStore({ dataDir });
+  balanceStore = createBalanceStore({ dataDir });
   config = createConfig({ dataDir });
 }
 
@@ -19,6 +21,10 @@ function registerIpc() {
   ipcMain.handle('trades:add', (_e, input) => store.add(input));
   ipcMain.handle('trades:update', (_e, id, patch) => store.update(id, patch));
   ipcMain.handle('trades:remove', (_e, id) => store.remove(id));
+  ipcMain.handle('balances:list', () => balanceStore.list());
+  ipcMain.handle('balances:add', (_e, input) => balanceStore.add(input));
+  ipcMain.handle('balances:update', (_e, id, patch) => balanceStore.update(id, patch));
+  ipcMain.handle('balances:remove', (_e, id) => balanceStore.remove(id));
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
@@ -66,6 +72,7 @@ function registerIpc() {
     const data = {
       app: 'DiaryHunt', schema: 1, exportedAt: new Date().toISOString(),
       trades: store.list(),
+      balances: balanceStore.list(),
       config: {
         exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types, tickers: cfg.tickers,
         settings: config.getSettings(),
@@ -92,6 +99,9 @@ function registerIpc() {
       return { imported: false, error: 'Это не похоже на бэкап DiaryHunt (нет списка сделок).' };
     }
     store.replaceAll(parsed.trades);
+    // balance snapshots are optional: backups made before the section existed
+    // simply have none, and the current ones are left alone
+    if (Array.isArray(parsed.balances)) balanceStore.replaceAll(parsed.balances);
     if (parsed.config) config.importAll(parsed.config);
     return { imported: true, count: parsed.trades.length };
   });

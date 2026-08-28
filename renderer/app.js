@@ -22,6 +22,12 @@ function showStats() {
   window.stats.renderStats(view, trades);
 }
 
+async function showBalances() {
+  setActive('tab-balances');
+  const snapshots = await window.api.balances.list();
+  window.balancesView.renderBalances(view, snapshots, trades);
+}
+
 function setActive(id) {
   document.querySelectorAll('.tab').forEach((b) => b.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -29,6 +35,7 @@ function setActive(id) {
 
 document.getElementById('tab-journal').onclick = showJournal;
 document.getElementById('tab-stats').onclick = showStats;
+document.getElementById('tab-balances').onclick = showBalances;
 document.getElementById('btn-add').onclick = () => window.form.openForm(null, refresh);
 document.getElementById('btn-settings').onclick = () => window.settings.openSettings();
 

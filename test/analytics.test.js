@@ -31,19 +31,6 @@ test('profitFactor — no losing trades yields Infinity, no trades yields null',
   assert.strictEqual(analytics.profitFactor(P()), null);
 });
 
-test('maxDrawdown — deepest peak-to-trough drop on the equity curve', () => {
-  // cumulative: 100, 300, 150, 250, 50  -> deepest drop is 300 -> 50
-  const dd = analytics.maxDrawdown([100, 300, 150, 250, 50]);
-  near(dd.value, 250);
-  assert.strictEqual(dd.peakIdx, 1);
-  assert.strictEqual(dd.troughIdx, 4);
-});
-
-test('maxDrawdown — a monotonically rising curve has no drawdown', () => {
-  const dd = analytics.maxDrawdown([100, 200, 300]);
-  near(dd.value, 0);
-});
-
 test('expectancy — average profit per trade', () => {
   near(analytics.expectancy(P(300, 100, -200)), 66.67);
   assert.strictEqual(analytics.expectancy(P()), null);
@@ -53,32 +40,6 @@ test('avgWin / avgLoss — averages of each side, loss returned as a negative', 
   near(analytics.avgWin(P(300, 100, -200)), 200);
   near(analytics.avgLoss(P(300, 100, -200)), -200);
   assert.strictEqual(analytics.avgWin(P(-50)), null);
-});
-
-test('streaks — longest winning and losing runs plus the current run', () => {
-  // + + - - - + +  -> maxWin 2, maxLoss 3, current +2
-  const s = analytics.streaks(P(10, 20, -5, -6, -7, 30, 40));
-  assert.strictEqual(s.maxWin, 2);
-  assert.strictEqual(s.maxLoss, 3);
-  assert.strictEqual(s.current, 2);
-});
-
-test('streaks — a losing tail reports a negative current run', () => {
-  const s = analytics.streaks(P(10, -5, -6));
-  assert.strictEqual(s.current, -2);
-});
-
-test('profitStructure — gross minus fees plus payout and adjustment equals net', () => {
-  // leg1 long: (101-100)*10 = +10$; leg2 short: (101-101)*10 = 0$  -> gross 10$ = 800₽
-  const t = trade({ usdRub: 80, payout: 150, adjustment: -50 });
-  t.legs[0].feeRub = 100;
-  t.legs[1].feeRub = 20;
-  const s = analytics.profitStructure([t]);
-  near(s.gross, 800);
-  near(s.fees, 120);
-  near(s.payout, 150);
-  near(s.adjustment, -50);
-  near(s.net, 800 - 120 + 150 - 50);
 });
 
 test('spreadBuckets — trades land in the entry-spread band they belong to', () => {
@@ -144,14 +105,6 @@ test('profitHistogram — identical profits still produce a single populated bin
 test('capitalDeployed — both legs entry value converted to roubles', () => {
   // (100*10 + 101*10) $ * 80 = 160 800 ₽
   near(analytics.capitalDeployed(trade()), 160800);
-});
-
-test('scatterPoints — one point per closed trade, entry spread against net profit', () => {
-  const pts = analytics.scatterPoints([trade({ num: 7, payout: 25 })]);
-  assert.strictEqual(pts.length, 1);
-  near(pts[0].spread, 0.01, 1e-6);
-  near(pts[0].profit, 800 + 25);
-  assert.strictEqual(pts[0].num, 7);
 });
 
 test('calendarMap — profit and trade count keyed by close date', () => {

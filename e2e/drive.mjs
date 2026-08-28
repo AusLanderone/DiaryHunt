@@ -118,8 +118,8 @@ try {
     monthRows: document.querySelectorAll('.mini-table tbody tr').length,
     metrics: [...document.querySelectorAll('.metric')].map((m) => m.innerText.replace(/\n/g, ': ')),
   }));
-  check('5 charts painted (equity, waterfall, days, scatter, histogram)',
-    widgets.canvases === 5 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
+  check('3 charts painted (equity, days, histogram)',
+    widgets.canvases === 3 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
   check('period chips rendered', widgets.chips.length === 4, widgets.chips.join('|'));
   check('calendar heatmap marks both close days', widgets.calCells === 2, `got ${widgets.calCells}`);
   check('spread / holding / capital / weekday panels present',
@@ -128,9 +128,11 @@ try {
   check('monthly table has a row per month', widgets.monthRows === 1, `got ${widgets.monthRows}`);
   const hasMetric = (re) => widgets.metrics.some((m) => re.test(m.toLowerCase()));
   check('profit factor metric shown (no losses -> ∞)', hasMetric(/профит-фактор.*∞/i), widgets.metrics.join(' / '));
-  check('drawdown metric shown', hasMetric(/просадка/i));
   check('avg holding time metric shown', hasMetric(/время в сделке.*0,0 дн/i), widgets.metrics.join(' / '));
-  check('streak metric shows +2', hasMetric(/серия сейчас.*\+2/i), widgets.metrics.join(' / '));
+
+  const removed = await page.evaluate(() => document.querySelector('#view').innerText.toLowerCase());
+  check('removed widgets stay gone (streaks, drawdown, waterfall, scatter)',
+    !/серия сейчас|макс. серии|макс. просадка|структура профита|спред входа против/.test(removed), removed.slice(0, 200));
 
   console.log('\n[3c] period filter');
   await page.evaluate(() => window.api.trades.add({

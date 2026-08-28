@@ -37,18 +37,6 @@ function profitFactor(profits) {
   return wins / losses;
 }
 
-// deepest peak-to-trough drop of a cumulative equity curve, in ₽
-function maxDrawdown(cumulative) {
-  let peak = -Infinity, peakIdx = 0;
-  const best = { value: 0, peakIdx: 0, troughIdx: 0 };
-  cumulative.forEach((v, i) => {
-    if (v > peak) { peak = v; peakIdx = i; }
-    const dd = peak - v;
-    if (dd > best.value) { best.value = dd; best.peakIdx = peakIdx; best.troughIdx = i; }
-  });
-  return best;
-}
-
 function expectancy(profits) {
   if (!profits.length) return null;
   return profits.reduce((s, v) => s + v, 0) / profits.length;
@@ -62,35 +50,6 @@ function avgWin(profits) {
 function avgLoss(profits) {
   const l = profits.filter((p) => p < 0);
   return l.length ? l.reduce((s, v) => s + v, 0) / l.length : null;
-}
-
-// longest winning / losing runs and the run the diary currently sits in
-// (current > 0 -> that many wins in a row, < 0 -> that many losses)
-function streaks(profits) {
-  let maxWin = 0, maxLoss = 0, run = 0;
-  for (const p of profits) {
-    if (p > 0) run = run > 0 ? run + 1 : 1;
-    else if (p < 0) run = run < 0 ? run - 1 : -1;
-    else run = 0;
-    if (run > maxWin) maxWin = run;
-    if (-run > maxLoss) maxLoss = -run;
-  }
-  return { maxWin, maxLoss, current: run };
-}
-
-// ---------- where the money actually comes from ----------
-
-// gross PnL (both legs, ₽) - fees + payout + adjustment = net profit
-function profitStructure(trades) {
-  const s = { gross: 0, fees: 0, payout: 0, adjustment: 0, net: 0 };
-  for (const t of closedOnly(trades)) {
-    s.gross += calc.grossTotal(t) * Number(t.usdRub);
-    s.fees += calc.feeTotalRub(t);
-    s.payout += Number(t.payout || 0);
-    s.adjustment += Number(t.adjustment || 0);
-  }
-  s.net = s.gross - s.fees + s.payout + s.adjustment;
-  return s;
 }
 
 // ---------- entry spread ----------
@@ -231,17 +190,6 @@ function avgReturnPct(trades) {
   return pcts.length ? pcts.reduce((s, v) => s + v, 0) / pcts.length : null;
 }
 
-// one point per closed trade for the spread-vs-profit scatter
-function scatterPoints(trades) {
-  return closedOnly(trades).map((t) => ({
-    num: t.num,
-    ticker: t.ticker,
-    spread: calc.entrySpread(t),
-    profit: profitOf(t),
-    date: t.closeDate,
-  }));
-}
-
 // ---------- period filter ----------
 
 // 'all' | 'month' | 'quarter' | 'year'; open trades survive every window
@@ -256,11 +204,11 @@ function filterByPeriod(trades, period, now = new Date()) {
 
 const _api = {
   groupBy,
-  profitFactor, maxDrawdown, expectancy, avgWin, avgLoss, streaks,
-  profitStructure, spreadBuckets,
+  profitFactor, expectancy, avgWin, avgLoss,
+  spreadBuckets,
   holdingDays, holdingBuckets,
   byMonth, byWeekday, calendarMap,
-  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct, scatterPoints,
+  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct,
   filterByPeriod,
   MONTHS, WEEKDAYS,
 };

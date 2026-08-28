@@ -4,9 +4,9 @@ const calc = require('./calc');
 
 const HEADER = [
   '№', 'Дата открытия', 'Дата закрытия', 'Тип', 'Тикер', 'Тег',
-  'Биржа', 'Сделка', 'Цена вход', 'Кол единиц', 'Цена выход', 'Комса',
+  'Биржа', 'Сделка', 'Цена вход', 'Кол единиц', 'Цена выход', 'Комса', 'Своп',
   'Позиция начало', 'Вход спред', 'Выход спред', 'Спред итог', 'Позиция конец',
-  'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout', 'Своп',
+  'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout',
   'Чистый профит', 'Комментарий',
 ];
 
@@ -36,6 +36,7 @@ function tradesToCsv(trades) {
         leg.units,
         leg.exitPrice,
         leg.feeRub,
+        leg.swapRub || 0,
         lc.start,
         first ? c.entrySpread : '',
         first ? c.exitSpread : '',
@@ -47,7 +48,6 @@ function tradesToCsv(trades) {
         first ? c.pnlNetPct : '',
         first ? trade.usdRub : '',
         first ? trade.payout : '',
-        first ? (trade.swap || 0) : '',
         first ? c.netProfitRub : '',
         first ? trade.comment : '',
       ].map(cell).join(','));

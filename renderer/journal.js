@@ -220,8 +220,8 @@ function tradeDetail(trade, c) {
 
   // a header row so each number in the leg lines says what it is
   const head = el('div', 'detail-leg head');
-  ['Биржа', 'Сделка', 'Цена вход → выход', 'Кол-во', 'Позиция начало → конец', 'Комиссия', 'PnL ноги']
-    .forEach((label, i) => head.append(el('span', ['ex', 'side', 'prices', 'units', 'pos', 'fee', 'pnl'][i], label)));
+  ['Биржа', 'Сделка', 'Цена вход → выход', 'Кол-во', 'Позиция начало → конец', 'Комиссия', 'Своп', 'PnL ноги']
+    .forEach((label, i) => head.append(el('span', ['ex', 'side', 'prices', 'units', 'pos', 'fee', 'swap', 'pnl'][i], label)));
   legs.append(head);
 
   trade.legs.forEach((leg, i) => {
@@ -233,6 +233,7 @@ function tradeDetail(trade, c) {
     line.append(el('span', 'units', F.fmtNum(leg.units)));
     line.append(el('span', 'pos', `${usd0(lc.start)} → ${usd0(lc.end)}`));
     line.append(el('span', 'fee', rub0(Number(leg.feeRub) || 0)));
+    line.append(el('span', 'swap ' + signCls(Number(leg.swapRub) || 0), rub0(Number(leg.swapRub) || 0)));
     line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
     legs.append(line);
   });
@@ -253,7 +254,7 @@ function tradeDetail(trade, c) {
     item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),
     item('Комиссии', rub0(c.feeTotalRub), 'neg'),
     item('Payout', rub0(Number(trade.payout) || 0), signCls(Number(trade.payout) || 0)),
-    item('Своп', rub0(Number(trade.swap) || 0), signCls(Number(trade.swap) || 0)),
+    item('Своп', rub0(c.swapTotalRub), signCls(c.swapTotalRub)),
   );
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
   box.append(meta);

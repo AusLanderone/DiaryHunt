@@ -49,6 +49,11 @@ function feeTotalRub(trade) {
   return trade.legs.reduce((s, leg) => s + Number(leg.feeRub || 0), 0);
 }
 
+// Overnight financing, entered per leg in roubles next to that leg's fee.
+function swapTotalRub(trade) {
+  return trade.legs.reduce((s, leg) => s + Number(leg.swapRub || 0), 0);
+}
+
 function pnlNet(trade) {
   const gross = grossTotal(trade);
   if (gross === null) return null;
@@ -67,12 +72,12 @@ function pnlNetPct(trade) {
   return base === 0 ? null : net / base;
 }
 
-// Net profit = PnL in roubles plus the three manual adjustments: payout
-// (the MOEX-side tax/rebate), swap (overnight financing) and a free-form fix.
+// Net profit = PnL in roubles plus the manual adjustments: payout (the
+// MOEX-side tax/rebate), the legs' swap and a free-form fix.
 function netProfitRub(trade) {
   const rub = pnlRub(trade);
   if (rub === null) return null;
-  return rub + Number(trade.payout || 0) + Number(trade.swap || 0) + Number(trade.adjustment || 0);
+  return rub + Number(trade.payout || 0) + swapTotalRub(trade) + Number(trade.adjustment || 0);
 }
 
 function isClosed(trade) {
@@ -104,6 +109,7 @@ function computeTrade(trade) {
       start: legPositionStart(leg),
       end: legPositionEnd(leg),
       gross: legGross(leg),
+      swapRub: Number(leg.swapRub || 0),
     })),
     entrySpread: entrySpread(trade),
     exitSpread: exitSpread(trade),
@@ -114,7 +120,7 @@ function computeTrade(trade) {
     pnlRub: pnlRub(trade),
     pnlNetPct: pnlNetPct(trade),
     netProfitRub: netProfitRub(trade),
-    swap: Number(trade.swap || 0),
+    swapTotalRub: swapTotalRub(trade),
     closed: isClosed(trade),
   };
 }
@@ -122,7 +128,7 @@ function computeTrade(trade) {
 const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
-  grossTotal, feeTotalRub, pnlNet, pnlRub, pnlNetPct, netProfitRub,
+  grossTotal, feeTotalRub, swapTotalRub, pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,
 };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;

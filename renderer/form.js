@@ -16,7 +16,7 @@ function pill(text, kind) {
   return s;
 }
 
-function legInputs(title, leg, defaultEx) {
+function legInputs(title, leg, defaultEx, index) {
   // editable exchange: type a new one or pick from the shared datalist
   const ex = el('input', { type: 'text', list: 'dh-exlist', value: leg.exchange || defaultEx || '', placeholder: 'биржа ▾', autocomplete: 'off' });
   const side = el('select');
@@ -26,6 +26,17 @@ function legInputs(title, leg, defaultEx) {
   const units = el('input', { type: 'number', step: 'any', value: leg.units ?? '' });
   const exit = el('input', { type: 'number', step: 'any', value: leg.exitPrice ?? '' });
   const fee = el('input', { type: 'number', step: 'any', value: leg.feeRub ?? '' });
+  // role in the spread expression: numerator or denominator
+  const role = el('select', { class: 'leg-role' });
+  [['mul', '× числитель'], ['div', '÷ знаменатель']].forEach(([v, l]) => role.append(new Option(l, v)));
+  role.value = window.calc.legRole(leg, index);
+  // price currency: dollars by default, because most instruments here quote in
+  // dollars even on MOEX (ED, SILV). Rouble-quoted ones (SI, CR) are switched
+  // by hand — deriving this from the exchange silently broke dollar MOEX legs.
+  const ccy = el('select', { class: 'leg-ccy' });
+  [['USD', 'Цена в $'], ['RUB', 'Цена в ₽']].forEach(([v, l]) => ccy.append(new Option(l, v)));
+  ccy.value = leg.priceCcy === 'RUB' ? 'RUB' : 'USD';
+  ccy.title = 'В какой валюте котируется цена этой ноги: $ (ED, SILV, USDCNH) или ₽ (SI, CR)';
   // swap sits with the fee, but in the leg's own currency: ₽ on MOEX, $ elsewhere
   const swap = el('input', { type: 'number', step: 'any', value: leg.swap ?? leg.swapRub ?? '' });
   const swapLabel = el('label', {}, [txt('Своп ₽'), swap]);
@@ -40,6 +51,7 @@ function legInputs(title, leg, defaultEx) {
     el('div', { class: 'leg-head' }, [txt(title)]),
     el('div', { class: 'grid' }, [
       field('Биржа', ex), field('Сделка', side),
+      field('Роль в спреде', role), field('Валюта цены', ccy),
       field('Цена вход', entry), field('Кол-во единиц', units),
       field('Цена выход', exit), field('Комиссия ₽', fee),
       swapLabel,
@@ -52,7 +64,9 @@ function legInputs(title, leg, defaultEx) {
     exitPrice: exit.value === '' ? null : Number(exit.value),
     feeRub: fee.value === '' ? 0 : Number(fee.value),
     swap: swap.value === '' ? 0 : Number(swap.value),
-  }), inputs: [ex, side, entry, units, exit, fee, swap] };
+    role: role.value,
+    priceCcy: ccy.value,
+  }), inputs: [ex, side, role, ccy, entry, units, exit, fee, swap] };
 }
 
 async function openForm(trade, onSaved) {
@@ -114,15 +128,47 @@ async function openForm(trade, onSaved) {
     el('div', { class: 'field-row' }, [payout, autoToggle]),
   ]);
 
-  const leg1 = legInputs('Нога 1', t.legs[0] || {}, cfg.exchanges[0] || '');
-  const leg2 = legInputs('Нога 2', t.legs[1] || {}, cfg.exchanges[1] || cfg.exchanges[0] || '');
+  // legs live in a list: at least two, no upper bound
+  const formulaLine = el('div', { class: 'formula-line' });
+  const legsWrap = el('div', { class: 'legs' });
+  let legFields = [];
+
+  const defaultExchange = (i) => cfg.exchanges[i] || cfg.exchanges[0] || '';
+
+  function renderLegs(source) {
+    legsWrap.innerHTML = '';
+    legFields = source.map((leg, i) => legInputs(`Нога ${i + 1}`, leg, defaultExchange(i), i));
+    legFields.forEach((f, i) => {
+      if (i >= 2) {
+        const del = el('button', { type: 'button', class: 'btn icon leg-remove' }, [txt('✕')]);
+        del.title = 'Убрать ногу';
+        del.onclick = () => {
+          renderLegs(legFields.map((x) => x.read()).filter((_, j) => j !== i));
+          recompute();
+        };
+        f.box.querySelector('.leg-head').appendChild(del);
+      }
+      legsWrap.appendChild(f.box);
+      f.inputs.forEach((inp) => inp.addEventListener('input', recompute));
+      f.inputs.forEach((inp) => inp.addEventListener('change', recompute));
+    });
+    const add = el('button', { type: 'button', class: 'btn ghost add-leg' }, [txt('+ Добавить ногу')]);
+    add.onclick = () => {
+      const next = legFields.map((x) => x.read());
+      next.push({ exchange: defaultExchange(next.length), role: 'mul' });
+      renderLegs(next);
+      recompute();
+    };
+    legsWrap.appendChild(add);
+  }
+
   const live = el('div', { class: 'live' });
 
   const currentRate = () => (Number(rate.value) || 0) / 100;
   function draft() {
     return { usdRub: Number(usdRub.value) || 0, payout: Number(payout.value) || 0,
       adjustment: Number(t.adjustment) || 0, closeDate: closeDate.value,
-      legs: [leg1.read(), leg2.read()] };
+      legs: legFields.map((f) => f.read()) };
   }
   function item(k, v, cls) {
     return el('div', { class: 'item' }, [
@@ -137,33 +183,26 @@ async function openForm(trade, onSaved) {
       payout.value = est == null ? '' : Math.round(est * 100) / 100;
     }
     payout.readOnly = payoutAuto.checked;
+    formulaLine.textContent = window.calc.spreadFormula(draft());
     const c = window.calc.computeTrade(draft());
     const closed = window.calc.isClosed(draft());
     live.innerHTML = '';
-    // position value of both legs together: what the trade ties up, and what it
-    // is worth once the exits are filled in
-    const posSum = (field) => {
-      let sum = 0;
-      for (const lc of c.legs) {
-        if (lc[field] === null || lc[field] === undefined) return null;
-        sum += lc[field];
-      }
-      return sum;
-    };
-    const usd0 = (n) => (n === null ? '—' : '$' + Math.round(n).toLocaleString('ru-RU'));
+    // legs can be quoted in different currencies, so the position total is roubles
+    const rub0 = (n) => (n === null || n === undefined ? '—'
+      : Math.round(n).toLocaleString('ru-RU') + ' ₽');
     live.append(
       item('Вход спред', F.fmtPct(c.entrySpread) || '—'),
       item('Спред выход', F.fmtPct(c.exitSpread) || '—'),
       item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
-      item('Позиция', `${usd0(posSum('start'))} → ${usd0(posSum('end'))}`),
+      item('Позиция', `${rub0(c.positionStartRub)} → ${rub0(c.positionEndRub)}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
       item('Своп', F.fmtRub(c.swapTotalRub), sc(c.swapTotalRub)),
       item('Чистый профит', F.fmtRub(c.netProfitRub) || '—', sc(c.netProfitRub)),
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),
     );
   }
-  [usdRub, rate, payout, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
-    i.addEventListener('input', recompute));
+  [usdRub, rate, payout, closeDate].forEach((i) => i.addEventListener('input', recompute));
+  renderLegs(t.legs.length ? t.legs : [{}, {}]);
   payoutAuto.addEventListener('change', recompute);
 
   // fetching only prefills the input; the field stays a plain editable number,
@@ -209,7 +248,8 @@ async function openForm(trade, onSaved) {
         field('Комментарий', comment, 'full'),
       ]),
       exList,
-      leg1.box, leg2.box,
+      formulaLine,
+      legsWrap,
       live,
       el('div', { class: 'modal-buttons' }, [cancel, save]),
     ]),
@@ -217,8 +257,9 @@ async function openForm(trade, onSaved) {
 
   cancel.onclick = () => backdrop.remove();
   save.onclick = async () => {
-    if (!ticker.value.trim() || !leg1.read().units || !leg2.read().units) {
-      alert('Укажите тикер и количество единиц по обеим ногам.');
+    const legValues = legFields.map((f) => f.read());
+    if (!ticker.value.trim() || legValues.length < 2 || legValues.some((l) => !l.units)) {
+      alert('Укажите тикер и количество единиц по каждой ноге (минимум две ноги).');
       return;
     }
     // persist any newly-typed dictionary values so they appear next time
@@ -229,7 +270,7 @@ async function openForm(trade, onSaved) {
     if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
     if (typeValue && !cfg.types.includes(typeValue)) await window.api.config.addItem('types', typeValue);
     const seenEx = new Set(cfg.exchanges);
-    for (const l of [leg1.read(), leg2.read()]) {
+    for (const l of legValues) {
       if (l.exchange && !seenEx.has(l.exchange)) { await window.api.config.addItem('exchanges', l.exchange); seenEx.add(l.exchange); }
     }
     const payload = {
@@ -237,7 +278,7 @@ async function openForm(trade, onSaved) {
       ticker: tickerValue, tag: tagValue, usdRub: Number(usdRub.value) || 0,
       payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
-      comment: comment.value, legs: [leg1.read(), leg2.read()],
+      comment: comment.value, legs: legValues,
     };
     if (trade) await window.api.trades.update(trade.id, payload);
     else await window.api.trades.add(payload);

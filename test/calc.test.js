@@ -177,3 +177,109 @@ test('computeTrade — reports each leg swap in roubles plus the trade total', (
 test('legSwapRub — the older swapRub field is still honoured as roubles', () => {
   near(calc.legSwapRub({ exchange: 'FOREX', swapRub: -420 }, 84), -420);
 });
+
+// ---- price currency per leg ----
+
+test('legPriceCcy — defaults to dollars, honours an explicit value', () => {
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'MOEX' }), 'USD');
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'MOEX', priceCcy: 'RUB' }), 'RUB');
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'BYBIT', priceCcy: 'RUB' }), 'RUB');
+});
+
+test('legPriceMul — a rouble leg is not converted, a dollar leg is', () => {
+  near(calc.legPriceMul({ priceCcy: 'RUB' }, 85), 1);
+  near(calc.legPriceMul({ priceCcy: 'USD' }, 85), 85);
+  near(calc.legPriceMul({}, 85), 85);
+});
+
+test('legGrossRub — leg PnL in roubles, per its own currency', () => {
+  near(calc.legGrossRub({ side: 'Лонг', entryPrice: 85500, exitPrice: 85600, units: 1, priceCcy: 'RUB' }, 85), 100);
+  near(calc.legGrossRub({ side: 'Шорт', entryPrice: 7.19, exitPrice: 7.18, units: 100, priceCcy: 'USD' }, 85), 85);
+  assert.strictEqual(calc.legGrossRub({ side: 'Лонг', entryPrice: 1, exitPrice: null, units: 1 }, 85), null);
+});
+
+// A mixed trade: one rouble leg on MOEX, one dollar leg elsewhere.
+const mixed = {
+  usdRub: 85, payout: 0, adjustment: 0, closeDate: '2026-08-28',
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85600, feeRub: 50, priceCcy: 'RUB' },
+    { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.19, units: 100, exitPrice: 7.18, feeRub: 30, priceCcy: 'USD' },
+  ],
+};
+
+test('pnlRub — each leg converts by its own currency, fees are already roubles', () => {
+  near(calc.pnlRub(mixed), 100 + 85 - 80);
+});
+
+test('pnlNet — the dollar figure is the rouble one at the trade rate', () => {
+  near(calc.pnlNet(mixed), (100 + 85 - 80) / 85);
+});
+
+test('positionStartRub / positionEndRub — legs summed in roubles', () => {
+  near(calc.positionStartRub(mixed), 85500 + 7.19 * 100 * 85);
+  near(calc.positionEndRub(mixed), 85600 + 7.18 * 100 * 85);
+});
+
+test('all-dollar trades keep their verified numbers', () => {
+  near(calc.pnlRub(trade1), 1339.40, 0.05);
+  near(calc.netProfitRub(trade1), 1044.40, 0.05);
+  near(calc.netProfitRub(trade3), 3923.97, 0.5);
+});
+
+
+// ---- multiplicative spread over any number of legs ----
+
+// The user's triangle: synthetic USD/CNH from MOEX against the market cross.
+const triangle = {
+  usdRub: 85, payout: 0, adjustment: 0, closeDate: '2026-08-28',
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85400, feeRub: 0, role: 'mul', priceCcy: 'RUB' },
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 11900, units: 1, exitPrice: 11880, feeRub: 0, role: 'div', priceCcy: 'RUB' },
+    { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.180, units: 1, exitPrice: 7.175, feeRub: 0, role: 'div', priceCcy: 'USD' },
+  ],
+};
+
+test('legRole — first leg divides, the rest multiply, explicit wins', () => {
+  assert.strictEqual(calc.legRole({}, 0), 'div');
+  assert.strictEqual(calc.legRole({}, 1), 'mul');
+  assert.strictEqual(calc.legRole({ role: 'mul' }, 0), 'mul');
+  assert.strictEqual(calc.legRole({ role: 'div' }, 1), 'div');
+});
+
+test('entrySpread — two legs keep the verified numbers', () => {
+  near(calc.entrySpread(trade1), 0.001903, 1e-5);
+  near(calc.exitSpread(trade1), 0.001484, 1e-5);
+  near(calc.spreadTotal(trade1), 0.000419, 1e-5);
+  assert.ok(calc.entrySpread(trade3) < 0, 'trade #3 entry spread stays negative');
+});
+
+test('entrySpread — the triangle divides the synthetic by the market cross', () => {
+  near(calc.entrySpread(triangle), 85500 / (11900 * 7.18) - 1, 1e-9);
+  near(calc.exitSpread(triangle), 85400 / (11880 * 7.175) - 1, 1e-9);
+});
+
+test('entrySpread — degenerate shapes yield null instead of Infinity', () => {
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: [triangle.legs[0]] }), null);
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: triangle.legs.map((l) => ({ ...l, role: 'mul' })) }), null);
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: [triangle.legs[0], { ...triangle.legs[1], entryPrice: 0 }] }), null);
+});
+
+test('exitSpread — an unfinished leg leaves the exit spread unknown', () => {
+  assert.strictEqual(calc.exitSpread({ ...triangle,
+    legs: [triangle.legs[0], triangle.legs[1], { ...triangle.legs[2], exitPrice: null }] }), null);
+});
+
+test('spreadFormula — reads back as the trade was entered', () => {
+  assert.strictEqual(calc.spreadFormula(triangle), 'MOEX ÷ MOEX ÷ VANTAGE');
+});
+
+test('computeTrade — leg figures come with their rouble equivalents', () => {
+  const c = calc.computeTrade(triangle);
+  near(c.legs[0].start, 85500);          // as quoted, in the leg's currency
+  near(c.legs[0].startRub, 85500);       // rouble leg: unchanged
+  near(c.legs[2].start, 7.18);
+  near(c.legs[2].startRub, 7.18 * 85);   // dollar leg: converted
+  near(c.legs[0].grossRub, -100);   // long 85500 -> 85400
+  near(c.positionStartRub, 85500 + 11900 + 7.18 * 85);
+  near(c.positionEndRub, 85400 + 11880 + 7.175 * 85);
+});

@@ -31,3 +31,19 @@ test('fields with commas are quoted', () => {
   const csv = tradesToCsv([trade1]);
   assert.ok(csv.includes('"hi, there"'));
 });
+
+test('csv — a leg row carries its role and price currency', () => {
+  const csv = tradesToCsv([{
+    num: 7, openDate: '2026-08-28', closeDate: '2026-08-28', ticker: 'TRI', tag: '', type: '',
+    usdRub: 85, payout: 0, adjustment: 0, comment: '',
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85600, feeRub: 0, role: 'mul', priceCcy: 'RUB' },
+      { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.18, units: 1, exitPrice: 7.17, feeRub: 0, role: 'div', priceCcy: 'USD' },
+    ],
+  }]);
+  const [header, first, second] = csv.split('\n');
+  assert.ok(header.includes('Роль'), header);
+  assert.ok(header.includes('Валюта цены'), header);
+  assert.ok(first.includes('mul') && first.includes('RUB'), first);
+  assert.ok(second.includes('div') && second.includes('USD'), second);
+});

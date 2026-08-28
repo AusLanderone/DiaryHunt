@@ -32,8 +32,13 @@ const price = (n) => (n === null || n === undefined || n === '' ? '—'
 const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
   : (n * 100).toFixed(2).replace('.', ',') + '%');
 const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
-const usd0 = (n) => (n === null || n === undefined ? '—'
-  : '$' + Math.round(n).toLocaleString('ru-RU'));
+// whole dollars for position-sized numbers, two decimals for small ones
+const usd0 = (n) => {
+  if (n === null || n === undefined) return '—';
+  return Math.abs(n) < 1000
+    ? (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+    : '$' + Math.round(n).toLocaleString('ru-RU');
+};
 const usd2 = (n) => (n === null || n === undefined ? '—'
   : (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
@@ -203,27 +208,21 @@ function tradeRow(trade, c) {
   return row;
 }
 
-// both legs together: what the trade tied up at entry and was worth at exit
-function posTotal(c, field) {
-  let sum = 0;
-  for (const lc of c.legs) {
-    if (lc[field] === null || lc[field] === undefined) return null;
-    sum += lc[field];
-  }
-  return sum;
-}
-
 // the numbers that don't fit the row, shown when a trade is expanded
 function tradeDetail(trade, c) {
   const F = window.format;
   const box = el('div', 'trade-detail');
 
+  // the spread expression this trade is actually computing
+  box.append(el('div', 'detail-formula', window.calc.spreadFormula(trade)));
+
   const legs = el('div', 'detail-legs');
 
   // a header row so each number in the leg lines says what it is
   const head = el('div', 'detail-leg head');
-  ['Биржа', 'Сделка', 'Цена вход → выход', 'Кол-во', 'Позиция начало → конец', 'Комиссия', 'Своп', 'PnL ноги']
-    .forEach((label, i) => head.append(el('span', ['ex', 'side', 'prices', 'units', 'pos', 'fee', 'swap', 'pnl'][i], label)));
+  ['Биржа', 'Сделка', 'Роль', 'Цена вход → выход', 'Кол-во', 'Позиция начало → конец', 'Комиссия', 'Своп', 'PnL ноги']
+    .forEach((label, i) => head.append(el('span',
+      ['ex', 'side', 'role', 'prices', 'units', 'pos', 'fee', 'swap', 'pnl'][i], label)));
   legs.append(head);
 
   trade.legs.forEach((leg, i) => {
@@ -231,9 +230,16 @@ function tradeDetail(trade, c) {
     const line = el('div', 'detail-leg');
     line.append(el('span', 'ex', leg.exchange || '—'));
     line.append(el('span', 'side ' + (leg.side === 'Шорт' ? 'neg' : 'pos'), leg.side || '—'));
-    line.append(el('span', 'prices', `${price(leg.entryPrice)} → ${price(leg.exitPrice)}`));
+    line.append(el('span', 'role', window.calc.legRole(leg, i) === 'div' ? '÷' : '×'));
+    // prices read in the currency the leg is quoted in
+    const p = window.calc.legPriceCcy(leg) === 'RUB'
+      ? (v) => (v === null || v === undefined || v === '' ? '—' : rub0(v))
+      : price;
+    line.append(el('span', 'prices', `${p(leg.entryPrice)} → ${p(leg.exitPrice)}`));
     line.append(el('span', 'units', F.fmtNum(leg.units)));
-    line.append(el('span', 'pos', `${usd0(lc.start)} → ${usd0(lc.end)}`));
+    // position and PnL read in the leg's currency, not always dollars
+    const money0 = window.calc.legPriceCcy(leg) === 'RUB' ? rub0 : usd0;
+    line.append(el('span', 'pos', `${money0(lc.start)} → ${lc.end === null ? '—' : money0(lc.end)}`));
     line.append(el('span', 'fee', rub0(Number(leg.feeRub) || 0)));
     // shown as entered (₽ on MOEX, $ elsewhere); the meta line carries the ₽ total
     const swapRaw = leg.swap !== undefined && leg.swap !== null && leg.swap !== ''
@@ -241,7 +247,8 @@ function tradeDetail(trade, c) {
     const swapIsRub = window.calc.isRubLeg(leg) || leg.swap === undefined || leg.swap === null || leg.swap === '';
     line.append(el('span', 'swap ' + signCls(swapRaw),
       swapIsRub ? rub0(swapRaw) : usd2(swapRaw)));
-    line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
+    line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—'
+      : (window.calc.legPriceCcy(leg) === 'RUB' ? rub0(lc.gross) : F.fmtUsd(lc.gross))));
     legs.append(line);
   });
   box.append(legs);
@@ -255,7 +262,7 @@ function tradeDetail(trade, c) {
   meta.append(
     item('Спред выход', pct2(c.exitSpread)),
     item('Спред итог', pct2(c.spreadTotal), signCls(c.spreadTotal)),
-    item('Позиция', `${usd0(posTotal(c, 'start'))} → ${usd0(posTotal(c, 'end'))}`),
+    item('Позиция', `${rub0(c.positionStartRub)} → ${c.positionEndRub === null ? '—' : rub0(c.positionEndRub)}`),
     item('Курс', String(trade.usdRub || '—')),
     item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),
     item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),

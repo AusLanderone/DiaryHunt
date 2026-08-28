@@ -692,6 +692,28 @@ try {
     /142 000|142000/.test(norm(withTwo.firstRow)) || /\+/.test(withTwo.firstRow), withTwo.firstRow);
   check('the journal line is named in the legend', /по журналу/i.test(withTwo.text), withTwo.text.slice(0, 200));
 
+  // hovering the curve reports the snapshot under the cursor
+  const hover = await page.evaluate(() => {
+    const canvas = document.querySelector('#view canvas');
+    const r = canvas.getBoundingClientRect();
+    const fire = (x) => canvas.dispatchEvent(new MouseEvent('mousemove', {
+      bubbles: true, clientX: r.left + x, clientY: r.top + r.height / 2 }));
+    fire(r.width - 30);                       // near the newest snapshot
+    const tip = document.getElementById('dh-chart-tip');
+    const shown = { display: tip.style.display, text: tip.innerText.replace(/\n/g, ' | ') };
+    canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    return { shown, afterLeave: document.getElementById('dh-chart-tip').style.display };
+  });
+  check('hovering the curve shows the snapshot under the cursor',
+    hover.shown.display === 'block' && /20 авг/.test(hover.shown.text), JSON.stringify(hover.shown));
+  check('the tooltip carries both lines and the drift',
+    /по отметкам/.test(hover.shown.text) && /по журналу/.test(hover.shown.text)
+    && /расхождение/.test(hover.shown.text), hover.shown.text);
+  check('the tooltip lists the accounts of that snapshot',
+    /MOEX/.test(hover.shown.text) && /FOREX/.test(hover.shown.text), hover.shown.text);
+  check('the tooltip carries the rate of that snapshot', /курс 85/.test(hover.shown.text), hover.shown.text);
+  check('leaving the curve hides the tooltip', hover.afterLeave === 'none', hover.afterLeave);
+
   // ₽ / $ toggle
   const toggled = await page.evaluate(() => {
     const chip = [...document.querySelectorAll('.period-bar .chip')].find((b) => b.textContent === '$');

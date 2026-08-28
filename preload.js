@@ -14,6 +14,12 @@ contextBridge.exposeInMainWorld('api', {
     getSettings: () => ipcRenderer.invoke('config:getSettings'),
     setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
+  balances: {
+    list: () => ipcRenderer.invoke('balances:list'),
+    add: (input) => ipcRenderer.invoke('balances:add', input),
+    update: (id, patch) => ipcRenderer.invoke('balances:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('balances:remove', id),
+  },
   rates: {
     usdRub: () => ipcRenderer.invoke('rates:usdRub'),
   },

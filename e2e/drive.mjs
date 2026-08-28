@@ -628,6 +628,87 @@ try {
   await page.evaluate(() => document.querySelector('#tab-journal').click());
 
 
+  console.log('\n[9] balances');
+  await page.evaluate(() => document.querySelector('#tab-balances').click());
+  await page.waitForTimeout(300);
+  const emptyBal = await page.evaluate(() => document.querySelector('#view').innerText);
+  check('an empty balances tab invites the first snapshot',
+    /отметок баланса пока нет/i.test(emptyBal), emptyBal.slice(0, 120));
+
+  // add a snapshot through the form
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .btn')]
+    .find((b) => /отметка баланса/i.test(b.textContent)).click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const formState = await page.evaluate(() => {
+    const set = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const modal = document.querySelector('.modal');
+    const rows = modal.querySelectorAll('.acc-row');
+    set(modal.querySelector('input[type=date]'), '2026-08-01');
+    set(modal.querySelector('.field-row input'), 80);
+    set(rows[0].querySelectorAll('input')[0], 'MOEX');
+    set(rows[0].querySelectorAll('input')[1], 800000);
+    rows[0].querySelector('select').value = 'RUB';
+    rows[0].querySelector('select').dispatchEvent(new Event('input', { bubbles: true }));
+    set(rows[1].querySelectorAll('input')[0], 'FOREX');
+    set(rows[1].querySelectorAll('input')[1], 5000);
+    rows[1].querySelector('select').value = 'USD';
+    rows[1].querySelector('select').dispatchEvent(new Event('input', { bubbles: true }));
+    return { total: modal.querySelector('.acc-total').innerText.replace(/\n/g, ' ') };
+  });
+  check('the form totals both currencies as they are typed',
+    norm(formState.total).includes('1200000₽') && norm(formState.total).includes('$15000'), formState.total);
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForSelector('.metrics', { timeout: 8000 });
+  const afterSave = await page.evaluate(() => ({
+    text: document.querySelector('#view').innerText.replace(/\n/g, ' | '),
+    rows: document.querySelectorAll('.mini-table tbody tr').length,
+    canvases: document.querySelectorAll('#view canvas').length,
+    accounts: [...document.querySelectorAll('.card .brow .name')].map((n) => n.textContent),
+  }));
+  check('the snapshot lands in the table', afterSave.rows === 1, JSON.stringify(afterSave.rows));
+  check('capital is reported in both currencies',
+    norm(afterSave.text).includes('1200000₽') && norm(afterSave.text).includes('$15000'), afterSave.text.slice(0, 200));
+  check('the account breakdown lists both accounts',
+    afterSave.accounts.join('|') === 'MOEX|FOREX', afterSave.accounts.join('|'));
+  check('the curve is drawn', afterSave.canvases === 1, String(afterSave.canvases));
+
+  // second snapshot straight through the store, so deltas have something to compare
+  await page.evaluate(() => window.api.balances.add({
+    date: '2026-08-20', usdRub: 85, comment: '',
+    accounts: [{ name: 'MOEX', amount: 900000, ccy: 'RUB' }, { name: 'FOREX', amount: 5200, ccy: 'USD' }],
+  }));
+  await page.evaluate(() => document.querySelector('#tab-journal').click());
+  await page.evaluate(() => document.querySelector('#tab-balances').click());
+  await page.waitForTimeout(300);
+  const withTwo = await page.evaluate(() => ({
+    text: document.querySelector('#view').innerText.replace(/\n/g, ' | '),
+    rows: document.querySelectorAll('.mini-table tbody tr').length,
+    firstRow: document.querySelector('.mini-table tbody tr').innerText.replace(/\n/g, ' | '),
+  }));
+  check('a second snapshot appears newest first', withTwo.rows === 2 && /20 авг/.test(withTwo.firstRow), withTwo.firstRow);
+  check('the change against the previous snapshot is shown',
+    /142 000|142000/.test(norm(withTwo.firstRow)) || /\+/.test(withTwo.firstRow), withTwo.firstRow);
+  check('the journal line is named in the legend', /по журналу/i.test(withTwo.text), withTwo.text.slice(0, 200));
+
+  // ₽ / $ toggle
+  const toggled = await page.evaluate(() => {
+    const chip = [...document.querySelectorAll('.period-bar .chip')].find((b) => b.textContent === '$');
+    chip.click();
+    return [...document.querySelectorAll('.period-bar .chip')].map((b) => `${b.textContent}:${b.classList.contains('active')}`);
+  });
+  check('the currency toggle switches the curve', toggled.includes('$:true'), toggled.join('|'));
+
+  // delete the snapshots again
+  const cleaned = await page.evaluate(async () => {
+    const list = await window.api.balances.list();
+    for (const s of list) await window.api.balances.remove(s.id);
+    return (await window.api.balances.list()).length;
+  });
+  check('snapshots can be removed', cleaned === 0, String(cleaned));
+
+
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

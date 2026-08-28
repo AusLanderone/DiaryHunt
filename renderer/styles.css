@@ -227,9 +227,14 @@ tr.state-open td:first-child { box-shadow: inset 3px 0 0 var(--open); }
 }
 
 /* ---------- stats ---------- */
-.metrics { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0 22px; }
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin: 16px 0 18px;
+}
 .metric {
-  min-width: 168px;
+  min-width: 0;
   padding: 14px 18px;
   background: var(--surface);
   border: 1px solid var(--line);
@@ -243,20 +248,32 @@ tr.state-open td:first-child { box-shadow: inset 3px 0 0 var(--open); }
   margin-top: 6px;
   font-family: var(--mono);
   font-variant-numeric: tabular-nums;
-  font-size: 23px; font-weight: 600;
+  font-size: 20px; font-weight: 600;
+  white-space: nowrap;          /* "−37 660,00 ₽" must not wrap onto a second line */
 }
 .metric .value.pos { color: var(--pos); }
 .metric .value.neg { color: var(--neg); }
 
-.chart-title {
-  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--muted); margin: 0 0 10px;
+/* one widget = one card; `wide` spans the whole row */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  align-items: start;
+  gap: 14px;
+  margin-bottom: 18px;
 }
-.chart-wrap {
+.card {
+  min-width: 0;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 14px;
+  padding: 14px 16px 16px;
+}
+.card.wide { grid-column: 1 / -1; }
+.card-title {
+  margin: 0 0 10px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted);
 }
 canvas { display: block; width: 100%; }
 
@@ -278,25 +295,7 @@ canvas { display: block; width: 100%; }
 .chart-tip .tv.neg { color: var(--neg); }
 .chart-tip .tip-sub { margin-top: 2px; font-size: 11px; color: var(--muted); }
 
-/* breakdown panels (profit by ticker / direction / tag / day) */
-.panels {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 22px 0 16px;
-}
-@media (max-width: 900px) { .panels { grid-template-columns: 1fr; } }
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 16px 18px;
-}
-.panel h3 {
-  margin: 0 0 8px;
-  font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
-  text-transform: uppercase; color: var(--muted);
-}
+/* breakdown rows inside a card (profit by ticker / direction / tag / …) */
 .brow {
   display: grid;
   grid-template-columns: minmax(84px, 148px) 1fr 108px;
@@ -452,7 +451,10 @@ canvas { display: block; width: 100%; }
 /* ---------- stats: calendar heatmap ---------- */
 .calendars {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  /* months keep a readable width instead of stretching across a wide card,
+     and the row is centred so a two-month diary doesn't hug the left edge */
+  grid-template-columns: repeat(auto-fit, minmax(230px, 270px));
+  justify-content: center;
   gap: 14px;
 }
 .cal {
@@ -494,7 +496,6 @@ canvas { display: block; width: 100%; }
 .cal-cell.has:hover { outline: 1px solid var(--text); }
 
 /* ---------- stats: monthly summary table ---------- */
-.panel.wide { margin-bottom: 18px; }
 .panel-empty { color: var(--muted-2); font-size: 12.5px; padding: 6px 0 2px; }
 .mini-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .mini-table th {

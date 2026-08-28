@@ -114,7 +114,7 @@ try {
     painted: [...document.querySelectorAll('#view canvas')].every((c) => c.width > 0 && c.height > 0),
     chips: [...document.querySelectorAll('.period-bar .chip')].map((b) => b.textContent),
     calCells: document.querySelectorAll('.cal-cell.has').length,
-    panels: [...document.querySelectorAll('.panel h3')].map((h) => h.textContent),
+    panels: [...document.querySelectorAll('.card-title')].map((h) => h.textContent),
     monthRows: document.querySelectorAll('.mini-table tbody tr').length,
     metrics: [...document.querySelectorAll('.metric')].map((m) => m.innerText.replace(/\n/g, ': ')),
   }));
@@ -133,6 +133,29 @@ try {
   const removed = await page.evaluate(() => document.querySelector('#view').innerText.toLowerCase());
   check('removed widgets stay gone (streaks, drawdown, waterfall, scatter)',
     !/серия сейчас|макс. серии|макс. просадка|структура профита|спред входа против/.test(removed), removed.slice(0, 200));
+
+  const layout = await page.evaluate(() => {
+    const view = document.querySelector('#view');
+    const cards = [...document.querySelectorAll('.stats-grid > .card')];
+    const rows = new Map();
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      const key = Math.round(r.top);
+      rows.set(key, (rows.get(key) || 0) + 1);
+    }
+    return {
+      cards: cards.length,
+      overflow: view.scrollWidth - view.clientWidth,
+      maxPerRow: Math.max(...rows.values()),
+      wide: cards.filter((c) => c.classList.contains('wide')).length,
+      metricsDisplay: getComputedStyle(document.querySelector('.metrics')).display,
+    };
+  });
+  check('every widget is a card in one grid', layout.cards === 13, JSON.stringify(layout));
+  check('cards share rows instead of stacking one per line', layout.maxPerRow >= 2, JSON.stringify(layout));
+  check('equity, calendar and the monthly table span the full row', layout.wide === 3, JSON.stringify(layout));
+  check('metrics use the equal-tile grid', layout.metricsDisplay === 'grid', layout.metricsDisplay);
+  check('stats page never scrolls sideways', layout.overflow <= 0, `overflow ${layout.overflow}px`);
 
   console.log('\n[3c] period filter');
   await page.evaluate(() => window.api.trades.add({

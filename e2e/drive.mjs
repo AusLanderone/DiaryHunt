@@ -93,6 +93,13 @@ try {
   }));
   check('CSV export is gone from the toolbar',
     !toolbar.buttons.some((b) => /csv/i.test(b)), toolbar.buttons.join('|'));
+  const settingsBtn = await page.evaluate(() => {
+    const b = document.querySelector('#btn-settings');
+    const r = b.getBoundingClientRect();
+    return { text: b.textContent.trim(), width: Math.round(r.width) };
+  });
+  check('settings button is labelled, not just an icon',
+    /настройки/i.test(settingsBtn.text) && settingsBtn.width >= 100, JSON.stringify(settingsBtn));
   await page.evaluate(() => document.querySelector('#btn-settings').click());
   await page.waitForSelector('.settings-modal', { timeout: 8000 });
   const inSettings = await page.evaluate(() => {

@@ -19,10 +19,11 @@ const time = (v) => {
 
 // Which way the data should move on startup. There is no merging: whichever
 // side is newer replaces the other outright.
-function decide({ dir, cloud, state }) {
-  if (!dir) return { action: 'off', reason: 'Папка синхронизации не выбрана' };
+function decide({ dir, url, cloud, state }) {
+  const target = url || dir;                    // `dir` kept for the older call shape
+  if (!target) return { action: 'off', reason: 'Облако не подключено' };
   const s = state || {};
-  if (!cloud) return { action: 'push', reason: 'В папке нет файла — выгружаем впервые' };
+  if (!cloud) return { action: 'push', reason: 'В облаке пусто — выгружаем впервые' };
 
   const cloudAt = time(cloud.syncedAt);
   const pushedAt = time(s.lastPushAt);

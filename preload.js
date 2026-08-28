@@ -24,7 +24,8 @@ contextBridge.exposeInMainWorld('api', {
     status: () => ipcRenderer.invoke('sync:status'),
     push: () => ipcRenderer.invoke('sync:push'),
     pull: () => ipcRenderer.invoke('sync:pull'),
-    choose: () => ipcRenderer.invoke('sync:choose'),
+    setLink: (url) => ipcRenderer.invoke('sync:setLink', url),
+    scriptCode: () => ipcRenderer.invoke('sync:scriptCode'),
     disable: () => ipcRenderer.invoke('sync:disable'),
     // main pushes its state here after every upload, pull or failure
     onState: (cb) => ipcRenderer.on('sync:state', (_e, state) => cb(state)),

@@ -856,83 +856,49 @@ try {
   check('snapshots can be removed', cleaned === 0, String(cleaned));
 
 
-  console.log('\n[10] cloud sync through a folder');
-  const SYNC_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'diaryhunt-cloud-'));
-  const SYNC_FILE = path.join(SYNC_DIR, 'diaryhunt-db.json');
+  console.log('\n[10] cloud sync by link');
+  const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxE2E_NOT_REAL/exec';
 
-  // the folder is chosen through a system dialog, so point the setting at it directly
-  await page.evaluate(async (dir) => {
-    const s = await window.api.config.getSettings();
-    await window.api.config.setSettings({ sync: { ...(s.sync || {}), dir, lastPushAt: '', lastPullAt: '' } });
-  }, SYNC_DIR);
+  const rubbish = await page.evaluate(() => window.api.sync.setLink('вставил не то'));
+  check('a link that is not a cloud endpoint is refused with a reason',
+    rubbish.phase === 'error' && /ссылка/i.test(rubbish.error), JSON.stringify(rubbish));
 
-  const pushed = await page.evaluate(() => window.api.sync.push());
-  check('a manual push writes the file into the folder', fs.existsSync(SYNC_FILE), SYNC_FILE);
-  check('the push reports what went up',
-    pushed.phase === 'pushed' && pushed.counts.trades > 0, JSON.stringify(pushed.counts || {}));
+  const sheet = await page.evaluate(() => window.api.sync.setLink(
+    'https://docs.google.com/spreadsheets/d/11uDLdRnK20pgN_DgFt0Ss_zuszV6wwvVF8nqnPWmnGI/edit'));
+  check('a spreadsheet link is called out specifically',
+    /таблиц/i.test(sheet.error || ''), JSON.stringify(sheet));
 
-  const onDisk = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
-  check('the file carries both databases and a stamp',
-    Array.isArray(onDisk.trades) && Array.isArray(onDisk.balances)
-    && Array.isArray(onDisk.cashflows) && !!onDisk.syncedAt && !!onDisk.device,
-    Object.keys(onDisk).join('|'));
+  const driveFile = await page.evaluate(() => window.api.sync.setLink(
+    'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp/view?usp=sharing'));
+  check('a plain Drive link connects but is marked read-only',
+    driveFile.enabled === true && driveFile.canWrite === false, JSON.stringify(driveFile));
+  const cannotPush = await page.evaluate(() => window.api.sync.push());
+  check('pushing to a read-only link fails with an explanation',
+    cannotPush.phase === 'error' && /чтени/i.test(cannotPush.error), JSON.stringify(cannotPush));
 
-  // adding a trade must reach the folder on its own, without pressing anything
-  const before = onDisk.trades.length;
-  await page.evaluate(() => window.api.trades.add({
-    openDate: '2026-08-28', closeDate: '2026-08-28', type: 'Фьючи', ticker: 'SYNCX', tag: '',
-    usdRub: 85, payout: 0, adjustment: 0, comment: '',
-    legs: [
-      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 101, feeRub: 0 },
-      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100.5, units: 10, exitPrice: 100.6, feeRub: 0 },
-    ],
-  }));
-  await page.waitForTimeout(2500);   // the upload is debounced by 1.5s
-  const afterAdd = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
-  check('adding a trade uploads by itself', afterAdd.trades.length === before + 1,
-    `${before} -> ${afterAdd.trades.length}`);
-  check('the uploaded file holds the new trade',
-    afterAdd.trades.some((t) => t.ticker === 'SYNCX'), 'SYNCX not found');
+  const connected = await page.evaluate((url) => window.api.sync.setLink(url), SCRIPT_URL);
+  check('an Apps Script link connects and allows writing',
+    connected.enabled === true && connected.canWrite === true && connected.kind === 'script',
+    JSON.stringify(connected));
 
-  // a balance snapshot counts as a change too
-  await page.evaluate(() => window.api.balances.add({
-    date: '2026-08-28', usdRub: 85, comment: 'sync',
-    accounts: [{ name: 'MOEX', amount: 100000, ccy: 'RUB' }],
-  }));
-  await page.waitForTimeout(2500);
-  const afterBalance = JSON.parse(fs.readFileSync(SYNC_FILE, 'utf8'));
-  check('a balance snapshot uploads too',
-    afterBalance.balances.some((b) => b.comment === 'sync'), String(afterBalance.balances.length));
-
-  // now pretend another device wrote a newer file
-  const fromOther = {
-    ...afterBalance,
-    trades: afterBalance.trades.filter((t) => t.ticker !== 'SYNCX'),
-    syncedAt: new Date(Date.now() + 60000).toISOString(),
-    device: 'LAPTOP-2',
-  };
-  fs.writeFileSync(SYNC_FILE, JSON.stringify(fromOther, null, 2), 'utf8');
-  const pulled = await page.evaluate(() => window.api.sync.pull());
-  check('pulling reports the device the version came from',
-    pulled.phase === 'pulled' && pulled.device === 'LAPTOP-2', JSON.stringify(pulled));
-  const localAfterPull = await page.evaluate(() => window.api.trades.list());
-  check('a pull replaces the local database outright',
-    !localAfterPull.some((t) => t.ticker === 'SYNCX'), 'SYNCX survived the pull');
-
-  const statusNow = await page.evaluate(() => window.api.sync.status());
-  check('status knows the folder and both timestamps',
-    statusNow.enabled && statusNow.dir === statusNow.dir && !!statusNow.lastPullAt, JSON.stringify(statusNow));
+  // the address is well-formed but nothing answers there — the failure must surface
+  const failed = await page.evaluate(() => window.api.sync.push());
+  check('an unreachable cloud reports the failure instead of hanging',
+    failed.phase === 'error' && !!failed.error, JSON.stringify(failed));
 
   const badge = await page.evaluate(() => {
     const b = document.querySelector('#sync-badge');
     return { cls: b.className, text: b.querySelector('.txt').textContent, title: b.title };
   });
-  check('the header badge shows a healthy sync', /ok/.test(badge.cls), JSON.stringify(badge));
-  check('its tooltip names the folder', /diaryhunt-cloud-/.test(badge.title), badge.title);
+  check('the badge turns red on a sync failure', /err/.test(badge.cls), JSON.stringify(badge));
+  check('its tooltip carries the link', badge.title.includes('macros/s'), badge.title);
+
+  const code = await page.evaluate(() => window.api.sync.scriptCode());
+  check('the app hands out the Apps Script snippet for setup',
+    /doGet/.test(code) && /doPost/.test(code) && /diaryhunt-db\.json/.test(code), code.slice(0, 60));
 
   const off = await page.evaluate(() => window.api.sync.disable());
   check('sync can be switched off', off.enabled === false, JSON.stringify(off));
-  fs.rmSync(SYNC_DIR, { recursive: true, force: true });
 
 
 } catch (err) {

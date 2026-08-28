@@ -8,6 +8,7 @@ const { createConfig } = require('./src/config');
 const { tradesToCsv } = require('./src/export');
 const backup = require('./src/backup');
 const cloudSync = require('./src/cloudSync');
+const cloudLink = require('./src/cloudLink');
 
 let store, balanceStore, config;
 let win = null;
@@ -22,19 +23,43 @@ function initData() {
 
 // ---------- cloud sync through a folder the cloud client keeps in step ----------
 
-const syncState = () => ({ dir: '', lastPushAt: '', lastPullAt: '', lastChangeAt: '', ...(config.getSettings().sync || {}) });
+const syncState = () => ({ url: '', lastPushAt: '', lastPullAt: '', lastChangeAt: '', ...(config.getSettings().sync || {}) });
 const saveSyncState = (patch) => config.setSettings({ sync: { ...syncState(), ...patch } });
 
-function syncFile() {
-  const dir = syncState().dir;
-  return dir ? path.join(dir, cloudSync.FILE_NAME) : null;
+const target = () => cloudLink.classify(syncState().url);
+
+// One request, with a deadline — a hung cloud must not hang the app.
+async function request(url, body) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
+  try {
+    const res = await fetch(url, body === undefined ? { signal: ctrl.signal, redirect: 'follow' } : {
+      method: 'POST',
+      signal: ctrl.signal,
+      redirect: 'follow',
+      // text/plain keeps Apps Script from rejecting the request as cross-origin
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.text();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-function readCloud() {
-  const file = syncFile();
-  if (!file || !fs.existsSync(file)) return null;
-  const parsed = cloudSync.parse(fs.readFileSync(file, 'utf8'));
-  return parsed.ok ? parsed : { error: parsed.error };
+async function readCloud() {
+  const link = target();
+  if (link.kind === 'unknown') return { error: link.error };
+  try {
+    const answer = cloudLink.parseResponse(await request(link.getUrl));
+    if (!answer.ok) return { error: answer.error };
+    if (!answer.data) return null;                     // nothing stored yet
+    const parsed = cloudSync.parse(JSON.stringify(answer.data));
+    return parsed.ok ? parsed : { error: parsed.error };
+  } catch (err) {
+    return { error: err.name === 'AbortError' ? 'Облако не ответило за 20 секунд' : err.message };
+  }
 }
 
 function currentPayload() {
@@ -55,34 +80,44 @@ function tellRenderer(state) {
 
 function status(extra = {}) {
   const st = syncState();
+  const link = cloudLink.classify(st.url);
   return {
-    enabled: Boolean(st.dir),
-    dir: st.dir,
+    enabled: Boolean(st.url) && link.kind !== 'unknown',
+    url: st.url,
+    kind: link.kind,
+    canWrite: Boolean(link.canWrite),
+    note: link.note || link.error || '',
     lastPushAt: st.lastPushAt,
     lastPullAt: st.lastPullAt,
     ...extra,
   };
 }
 
-function pushNow() {
-  const file = syncFile();
-  if (!file) return status({ phase: 'off' });
+async function pushNow() {
+  const link = target();
+  if (!syncState().url) return status({ phase: 'off' });
+  if (link.kind === 'unknown') return tellRenderer(status({ phase: 'error', error: link.error }));
+  if (!link.canWrite) {
+    return tellRenderer(status({ phase: 'error', error: link.note || 'По этой ссылке выгружать нельзя' }));
+  }
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
     const payload = cloudSync.stamp(currentPayload(), {});
-    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    await request(link.postUrl, JSON.stringify(payload));
     saveSyncState({ lastPushAt: payload.syncedAt });
     return tellRenderer(status({ phase: 'pushed', at: payload.syncedAt, counts: payload.counts }));
   } catch (err) {
-    return tellRenderer(status({ phase: 'error', error: err.message }));
+    return tellRenderer(status({
+      phase: 'error',
+      error: err.name === 'AbortError' ? 'Облако не ответило за 20 секунд' : err.message,
+    }));
   }
 }
 
 // A pull replaces the local databases outright — that is the agreed rule, so
 // the previous state goes to backups/ first.
-function pullNow() {
-  const cloud = readCloud();
-  if (!cloud) return tellRenderer(status({ phase: 'error', error: 'В папке нет файла синхронизации' }));
+async function pullNow() {
+  const cloud = await readCloud();
+  if (!cloud) return tellRenderer(status({ phase: 'error', error: 'В облаке пока ничего нет' }));
   if (cloud.error) return tellRenderer(status({ phase: 'error', error: cloud.error }));
   const read = cloud.sections;
   if (read.trades) store.replaceAll(read.trades);
@@ -99,16 +134,18 @@ function pullNow() {
 // every change to trades, balances or cash movements schedules an upload
 function markChanged() {
   saveSyncState({ lastChangeAt: new Date().toISOString() });
-  if (!syncFile()) return;
+  if (!target().canWrite) return;
   tellRenderer(status({ phase: 'pushing' }));
   clearTimeout(pushTimer);
   pushTimer = setTimeout(pushNow, 1500);
 }
 
-function syncOnStartup() {
-  const cloud = readCloud();
+async function syncOnStartup() {
+  if (!syncState().url) return tellRenderer(status({ phase: 'off' }));
+  tellRenderer(status({ phase: 'pushing' }));           // "работаю" while the request runs
+  const cloud = await readCloud();
   const decision = cloudSync.decide({
-    dir: syncState().dir,
+    dir: syncState().url,
     cloud: cloud && !cloud.error ? cloud.data : null,
     state: syncState(),
   });
@@ -134,19 +171,17 @@ function registerIpc() {
   ipcMain.handle('sync:status', () => status({ phase: syncState().dir ? 'idle' : 'off' }));
   ipcMain.handle('sync:push', () => pushNow());
   ipcMain.handle('sync:pull', () => pullNow());
-  ipcMain.handle('sync:choose', async () => {
-    const { canceled, filePaths } = await dialog.showOpenDialog({
-      title: 'Папка облачного клиента для синхронизации',
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (canceled || !filePaths || !filePaths[0]) return status({ phase: 'off' });
-    saveSyncState({ dir: filePaths[0], lastPushAt: '', lastPullAt: '' });
+  ipcMain.handle('sync:setLink', async (_e, url) => {
+    const link = cloudLink.classify(url);
+    if (link.kind === 'unknown') return status({ phase: 'error', error: link.error });
+    saveSyncState({ url: String(url).trim(), lastPushAt: '', lastPullAt: '' });
     return syncOnStartup();
   });
   ipcMain.handle('sync:disable', () => {
-    saveSyncState({ dir: '', lastPushAt: '', lastPullAt: '' });
+    saveSyncState({ url: '', lastPushAt: '', lastPullAt: '' });
     return tellRenderer(status({ phase: 'off' }));
   });
+  ipcMain.handle('sync:scriptCode', () => cloudLink.SCRIPT_CODE);
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
@@ -241,7 +276,7 @@ function createWindow() {
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   // the first sync runs once the page can receive its result
-  win.webContents.once('did-finish-load', () => syncOnStartup());
+  win.webContents.once('did-finish-load', () => { syncOnStartup(); });
 }
 
 app.whenReady().then(() => {

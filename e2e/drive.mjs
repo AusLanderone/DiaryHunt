@@ -257,6 +257,41 @@ try {
   check('manual rate recomputes the live totals', /чистый профит/i.test(manual.live));
   await page.screenshot({ path: path.join(SHOT, '06-form-rate.png') });
 
+
+  console.log('\n[6] ticker behaves like the tag dictionary');
+  const tickerUi = await page.evaluate(() => {
+    const input = [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /тикер/i.test(l.textContent)).querySelector('input');
+    const list = document.getElementById(input.getAttribute('list'));
+    return {
+      list: input.getAttribute('list'),
+      options: [...(list?.options || [])].map((o) => o.value),
+      placeholder: input.placeholder,
+    };
+  });
+  check('ticker input is backed by a datalist', tickerUi.list === 'dh-tickerlist', JSON.stringify(tickerUi));
+  check('ticker list is seeded from trades already in the diary',
+    ['ED', 'SILV'].every((t) => tickerUi.options.includes(t)), tickerUi.options.join('|'));
+  check('ticker uses the same editable-dropdown hint as the tag field',
+    /впиши свой или выбери/.test(tickerUi.placeholder), tickerUi.placeholder);
+
+  await page.evaluate(() => {
+    const input = [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /тикер/i.test(l.textContent)).querySelector('input');
+    input.value = 'NEWTKR';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /сохранить/i.test(b.textContent)).click();
+  });
+  await page.waitForSelector('.modal', { state: 'detached', timeout: 10000 });
+  const cfgTickers = await page.evaluate(() => window.api.config.get().then((c) => c.tickers));
+  check('a newly typed ticker is remembered in the dictionary',
+    cfgTickers.includes('NEWTKR'), JSON.stringify(cfgTickers));
+
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const reopened = await page.evaluate(() => [...document.getElementById('dh-tickerlist').options].map((o) => o.value));
+  check('the remembered ticker shows up in the next trade form', reopened.includes('NEWTKR'), reopened.join('|'));
+
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

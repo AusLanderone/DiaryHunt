@@ -7,6 +7,7 @@ const DEFAULTS = {
   exchanges: ['MOEX', 'FOREX'],
   tags: ['Схождение', 'Раскор'],
   types: ['Фьючи', 'Крипто', 'RWA'],
+  tickers: [],   // filled from what gets typed — every diary trades its own set
 };
 
 const SETTINGS_DEFAULTS = {
@@ -66,7 +67,7 @@ function createConfig({ dataDir }) {
   function importAll(obj) {
     if (!obj || typeof obj !== 'object') return;
     const data = read();
-    ['exchanges', 'tags', 'types'].forEach((k) => {
+    ['exchanges', 'tags', 'types', 'tickers'].forEach((k) => {
       if (Array.isArray(obj[k])) data[k] = obj[k];
     });
     if (obj.settings && typeof obj.settings === 'object') {

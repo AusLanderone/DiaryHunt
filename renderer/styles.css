@@ -715,3 +715,16 @@ canvas { display: block; width: 100%; }
   font-variant-numeric: tabular-nums;
 }
 .field-note.err { color: var(--neg); }
+
+/* ---------- form: multi-leg controls ---------- */
+.formula-line {
+  margin: 2px 0 10px;
+  padding: 7px 12px;
+  background: var(--surface-2);
+  border-radius: 8px;
+  font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+}
+.formula-line:empty { display: none; }
+.add-leg { width: 100%; margin-top: 10px; }
+.leg-head { display: flex; align-items: center; gap: 8px; }
+.leg-remove { margin-left: auto; }

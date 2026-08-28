@@ -307,6 +307,13 @@ header {
   font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px;
 }
 .detail-leg + .detail-leg { border-top: 1px solid var(--line-soft); }
+.detail-leg.head {
+  padding: 8px 0 6px;
+  font-family: var(--sans);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.05em;
+  text-transform: uppercase; color: var(--muted-2);
+}
+.detail-leg.head span { font-family: inherit; font-size: inherit; color: inherit; font-weight: inherit; }
 .detail-leg .ex { font-family: var(--sans); font-size: 12.5px; }
 .detail-leg .side { font-family: var(--sans); font-size: 12px; }
 .detail-leg .side.pos { color: var(--pos); }

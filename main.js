@@ -7,8 +7,11 @@ const rates = require('./src/rates');
 const { createConfig } = require('./src/config');
 const { tradesToCsv } = require('./src/export');
 const backup = require('./src/backup');
+const cloudSync = require('./src/cloudSync');
 
 let store, balanceStore, config;
+let win = null;
+let pushTimer = null;
 
 function initData() {
   const dataDir = app.getPath('userData');
@@ -17,19 +20,133 @@ function initData() {
   config = createConfig({ dataDir });
 }
 
+// ---------- cloud sync through a folder the cloud client keeps in step ----------
+
+const syncState = () => ({ dir: '', lastPushAt: '', lastPullAt: '', lastChangeAt: '', ...(config.getSettings().sync || {}) });
+const saveSyncState = (patch) => config.setSettings({ sync: { ...syncState(), ...patch } });
+
+function syncFile() {
+  const dir = syncState().dir;
+  return dir ? path.join(dir, cloudSync.FILE_NAME) : null;
+}
+
+function readCloud() {
+  const file = syncFile();
+  if (!file || !fs.existsSync(file)) return null;
+  const parsed = cloudSync.parse(fs.readFileSync(file, 'utf8'));
+  return parsed.ok ? parsed : { error: parsed.error };
+}
+
+function currentPayload() {
+  const cfg = config.get();
+  return backup.build({
+    trades: store.list(),
+    balances: balanceStore.list(),
+    cashflows: balanceStore.listFlows(),
+    config: cfg,
+    settings: config.getSettings(),
+  });
+}
+
+function tellRenderer(state) {
+  if (win && !win.isDestroyed()) win.webContents.send('sync:state', state);
+  return state;
+}
+
+function status(extra = {}) {
+  const st = syncState();
+  return {
+    enabled: Boolean(st.dir),
+    dir: st.dir,
+    lastPushAt: st.lastPushAt,
+    lastPullAt: st.lastPullAt,
+    ...extra,
+  };
+}
+
+function pushNow() {
+  const file = syncFile();
+  if (!file) return status({ phase: 'off' });
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    const payload = cloudSync.stamp(currentPayload(), {});
+    fs.writeFileSync(file, JSON.stringify(payload, null, 2), 'utf8');
+    saveSyncState({ lastPushAt: payload.syncedAt });
+    return tellRenderer(status({ phase: 'pushed', at: payload.syncedAt, counts: payload.counts }));
+  } catch (err) {
+    return tellRenderer(status({ phase: 'error', error: err.message }));
+  }
+}
+
+// A pull replaces the local databases outright — that is the agreed rule, so
+// the previous state goes to backups/ first.
+function pullNow() {
+  const cloud = readCloud();
+  if (!cloud) return tellRenderer(status({ phase: 'error', error: 'В папке нет файла синхронизации' }));
+  if (cloud.error) return tellRenderer(status({ phase: 'error', error: cloud.error }));
+  const read = cloud.sections;
+  if (read.trades) store.replaceAll(read.trades);
+  if (read.balances) balanceStore.replaceAll(read.balances);
+  if (read.cashflows) balanceStore.replaceAllFlows(read.cashflows);
+  if (read.config) config.importAll(read.config);
+  const at = new Date().toISOString();
+  saveSyncState({ lastPullAt: at, lastPushAt: cloud.data.syncedAt, lastChangeAt: '' });
+  return tellRenderer(status({
+    phase: 'pulled', at, counts: read.counts, device: cloud.data.device,
+  }));
+}
+
+// every change to trades, balances or cash movements schedules an upload
+function markChanged() {
+  saveSyncState({ lastChangeAt: new Date().toISOString() });
+  if (!syncFile()) return;
+  tellRenderer(status({ phase: 'pushing' }));
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushNow, 1500);
+}
+
+function syncOnStartup() {
+  const cloud = readCloud();
+  const decision = cloudSync.decide({
+    dir: syncState().dir,
+    cloud: cloud && !cloud.error ? cloud.data : null,
+    state: syncState(),
+  });
+  if (cloud && cloud.error) return tellRenderer(status({ phase: 'error', error: cloud.error }));
+  if (decision.action === 'pull') return pullNow();
+  if (decision.action === 'push') return pushNow();
+  return tellRenderer(status({ phase: decision.action === 'off' ? 'off' : 'idle', reason: decision.reason }));
+}
+
 function registerIpc() {
   ipcMain.handle('trades:list', () => store.list());
-  ipcMain.handle('trades:add', (_e, input) => store.add(input));
-  ipcMain.handle('trades:update', (_e, id, patch) => store.update(id, patch));
-  ipcMain.handle('trades:remove', (_e, id) => store.remove(id));
+  ipcMain.handle('trades:add', (_e, input) => { const r = store.add(input); markChanged(); return r; });
+  ipcMain.handle('trades:update', (_e, id, patch) => { const r = store.update(id, patch); markChanged(); return r; });
+  ipcMain.handle('trades:remove', (_e, id) => { store.remove(id); markChanged(); });
   ipcMain.handle('balances:list', () => balanceStore.list());
-  ipcMain.handle('balances:add', (_e, input) => balanceStore.add(input));
-  ipcMain.handle('balances:update', (_e, id, patch) => balanceStore.update(id, patch));
-  ipcMain.handle('balances:remove', (_e, id) => balanceStore.remove(id));
+  ipcMain.handle('balances:add', (_e, input) => { const r = balanceStore.add(input); markChanged(); return r; });
+  ipcMain.handle('balances:update', (_e, id, patch) => { const r = balanceStore.update(id, patch); markChanged(); return r; });
+  ipcMain.handle('balances:remove', (_e, id) => { balanceStore.remove(id); markChanged(); });
   ipcMain.handle('flows:list', () => balanceStore.listFlows());
-  ipcMain.handle('flows:add', (_e, input) => balanceStore.addFlow(input));
-  ipcMain.handle('flows:update', (_e, id, patch) => balanceStore.updateFlow(id, patch));
-  ipcMain.handle('flows:remove', (_e, id) => balanceStore.removeFlow(id));
+  ipcMain.handle('flows:add', (_e, input) => { const r = balanceStore.addFlow(input); markChanged(); return r; });
+  ipcMain.handle('flows:update', (_e, id, patch) => { const r = balanceStore.updateFlow(id, patch); markChanged(); return r; });
+  ipcMain.handle('flows:remove', (_e, id) => { balanceStore.removeFlow(id); markChanged(); });
+  ipcMain.handle('sync:status', () => status({ phase: syncState().dir ? 'idle' : 'off' }));
+  ipcMain.handle('sync:push', () => pushNow());
+  ipcMain.handle('sync:pull', () => pullNow());
+  ipcMain.handle('sync:choose', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({
+      title: 'Папка облачного клиента для синхронизации',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (canceled || !filePaths || !filePaths[0]) return status({ phase: 'off' });
+    saveSyncState({ dir: filePaths[0], lastPushAt: '', lastPullAt: '' });
+    return syncOnStartup();
+  });
+  ipcMain.handle('sync:disable', () => {
+    saveSyncState({ dir: '', lastPushAt: '', lastPullAt: '' });
+    return tellRenderer(status({ phase: 'off' }));
+  });
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
@@ -106,12 +223,13 @@ function registerIpc() {
     if (read.balances) balanceStore.replaceAll(read.balances);
     if (read.cashflows) balanceStore.replaceAllFlows(read.cashflows);
     if (read.config) config.importAll(read.config);
+    markChanged();
     return { imported: true, counts: read.counts, summary: backup.summary(read.counts) };
   });
 }
 
 function createWindow() {
-  const win = new BrowserWindow({
+  win = new BrowserWindow({
     width: 1280,
     height: 800,
     icon: path.join(__dirname, 'renderer', 'icon.png'),
@@ -122,6 +240,8 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // the first sync runs once the page can receive its result
+  win.webContents.once('did-finish-load', () => syncOnStartup());
 }
 
 app.whenReady().then(() => {

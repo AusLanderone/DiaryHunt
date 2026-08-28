@@ -41,6 +41,43 @@ document.getElementById('tab-balances').onclick = showBalances;
 document.getElementById('btn-add').onclick = () => window.form.openForm(null, refresh);
 document.getElementById('btn-settings').onclick = () => window.settings.openSettings();
 
+// ---------- cloud sync indicator ----------
+
+const badge = document.getElementById('sync-badge');
+const hhmm = (iso) => (iso ? new Date(iso).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '');
+
+const PHASES = {
+  off: { cls: 'off', text: 'Облако не настроено' },
+  idle: { cls: 'ok', text: 'Синхронизировано' },
+  pushing: { cls: 'busy', text: 'Выгружаю…' },
+  pushed: { cls: 'ok', text: 'Выгружено' },
+  pulled: { cls: 'ok', text: 'Обновлено из облака' },
+  error: { cls: 'err', text: 'Ошибка синхронизации' },
+};
+
+function renderSync(state) {
+  if (!state) return;
+  const phase = PHASES[state.phase] || PHASES.idle;
+  badge.className = 'sync-badge ' + phase.cls;
+  const at = state.at || state.lastPushAt;
+  badge.querySelector('.txt').textContent =
+    state.phase === 'off' ? phase.text : `${phase.text}${at ? ' ' + hhmm(at) : ''}`;
+  const lines = [];
+  if (state.dir) lines.push(`Папка: ${state.dir}`);
+  if (state.lastPushAt) lines.push(`Выгружено: ${new Date(state.lastPushAt).toLocaleString('ru-RU')}`);
+  if (state.lastPullAt) lines.push(`Загружено: ${new Date(state.lastPullAt).toLocaleString('ru-RU')}`);
+  if (state.device) lines.push(`Последняя версия с устройства: ${state.device}`);
+  if (state.error) lines.push(`Ошибка: ${state.error}`);
+  if (!state.enabled) lines.push('Нажмите, чтобы выбрать папку облачного клиента');
+  badge.title = lines.join('\n');
+  // a pull replaces the local data, so what is on screen is stale
+  if (state.phase === 'pulled') refresh();
+}
+
+badge.onclick = () => window.settings.openSettings();
+window.api.sync.onState(renderSync);
+window.api.sync.status().then(renderSync);
+
 async function applySavedSettings() {
   try { window.settings.applySettings(await window.api.config.getSettings()); } catch { /* defaults */ }
 }

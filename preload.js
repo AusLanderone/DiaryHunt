@@ -20,6 +20,15 @@ contextBridge.exposeInMainWorld('api', {
     update: (id, patch) => ipcRenderer.invoke('balances:update', id, patch),
     remove: (id) => ipcRenderer.invoke('balances:remove', id),
   },
+  sync: {
+    status: () => ipcRenderer.invoke('sync:status'),
+    push: () => ipcRenderer.invoke('sync:push'),
+    pull: () => ipcRenderer.invoke('sync:pull'),
+    choose: () => ipcRenderer.invoke('sync:choose'),
+    disable: () => ipcRenderer.invoke('sync:disable'),
+    // main pushes its state here after every upload, pull or failure
+    onState: (cb) => ipcRenderer.on('sync:state', (_e, state) => cb(state)),
+  },
   flows: {
     list: () => ipcRenderer.invoke('flows:list'),
     add: (input) => ipcRenderer.invoke('flows:add', input),

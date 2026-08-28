@@ -54,6 +54,22 @@ function feeTotalRub(trade) {
 // and is still read as roubles whatever the exchange.
 const isRubLeg = (leg) => String(leg.exchange || '').trim().toUpperCase() === 'MOEX';
 
+// Price currency lives on the leg. Legs saved before this field existed are
+// dollar-priced — MOEX ones included (ED and SILV quote in dollars), so it must
+// not be inferred from the exchange here; the form picks the default at entry.
+function legPriceCcy(leg) {
+  return leg.priceCcy === 'RUB' ? 'RUB' : 'USD';
+}
+
+function legPriceMul(leg, usdRub) {
+  return legPriceCcy(leg) === 'RUB' ? 1 : (Number(usdRub) || 0);
+}
+
+function legGrossRub(leg, usdRub) {
+  const g = legGross(leg);
+  return g === null ? null : g * legPriceMul(leg, usdRub);
+}
+
 function legSwapRub(leg, usdRub) {
   if (leg.swapRub !== undefined && leg.swapRub !== null && leg.swapRub !== '') {
     return Number(leg.swapRub) || 0;
@@ -141,6 +157,7 @@ const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
+  legPriceCcy, legPriceMul, legGrossRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,
 };

@@ -177,3 +177,23 @@ test('computeTrade — reports each leg swap in roubles plus the trade total', (
 test('legSwapRub — the older swapRub field is still honoured as roubles', () => {
   near(calc.legSwapRub({ exchange: 'FOREX', swapRub: -420 }, 84), -420);
 });
+
+// ---- price currency per leg ----
+
+test('legPriceCcy — defaults to dollars, honours an explicit value', () => {
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'MOEX' }), 'USD');
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'MOEX', priceCcy: 'RUB' }), 'RUB');
+  assert.strictEqual(calc.legPriceCcy({ exchange: 'BYBIT', priceCcy: 'RUB' }), 'RUB');
+});
+
+test('legPriceMul — a rouble leg is not converted, a dollar leg is', () => {
+  near(calc.legPriceMul({ priceCcy: 'RUB' }, 85), 1);
+  near(calc.legPriceMul({ priceCcy: 'USD' }, 85), 85);
+  near(calc.legPriceMul({}, 85), 85);
+});
+
+test('legGrossRub — leg PnL in roubles, per its own currency', () => {
+  near(calc.legGrossRub({ side: 'Лонг', entryPrice: 85500, exitPrice: 85600, units: 1, priceCcy: 'RUB' }, 85), 100);
+  near(calc.legGrossRub({ side: 'Шорт', entryPrice: 7.19, exitPrice: 7.18, units: 100, priceCcy: 'USD' }, 85), 85);
+  assert.strictEqual(calc.legGrossRub({ side: 'Лонг', entryPrice: 1, exitPrice: null, units: 1 }, 85), null);
+});

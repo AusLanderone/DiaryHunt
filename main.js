@@ -6,6 +6,7 @@ const { createBalanceStore } = require('./src/balanceStore');
 const rates = require('./src/rates');
 const { createConfig } = require('./src/config');
 const { tradesToCsv } = require('./src/export');
+const backup = require('./src/backup');
 
 let store, balanceStore, config;
 
@@ -73,18 +74,15 @@ function registerIpc() {
     });
     if (canceled || !filePath) return { saved: false };
     const cfg = config.get();
-    const data = {
-      app: 'DiaryHunt', schema: 1, exportedAt: new Date().toISOString(),
+    const data = backup.build({
       trades: store.list(),
       balances: balanceStore.list(),
       cashflows: balanceStore.listFlows(),
-      config: {
-        exchanges: cfg.exchanges, tags: cfg.tags, types: cfg.types, tickers: cfg.tickers,
-        settings: config.getSettings(),
-      },
-    };
+      config: cfg,
+      settings: config.getSettings(),
+    });
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-    return { saved: true, path: filePath, count: data.trades.length };
+    return { saved: true, path: filePath, counts: data.counts, summary: backup.summary(data.counts) };
   });
 
   // Restore from a backup file (replaces current trades; store backs up first).
@@ -100,16 +98,15 @@ function registerIpc() {
     } catch {
       return { imported: false, error: 'Файл не читается как JSON.' };
     }
-    if (!parsed || !Array.isArray(parsed.trades)) {
-      return { imported: false, error: 'Это не похоже на бэкап DiaryHunt (нет списка сделок).' };
-    }
-    store.replaceAll(parsed.trades);
-    // balance snapshots are optional: backups made before the section existed
-    // simply have none, and the current ones are left alone
-    if (Array.isArray(parsed.balances)) balanceStore.replaceAll(parsed.balances);
-    if (Array.isArray(parsed.cashflows)) balanceStore.replaceAllFlows(parsed.cashflows);
-    if (parsed.config) config.importAll(parsed.config);
-    return { imported: true, count: parsed.trades.length };
+    const read = backup.read(parsed);
+    if (!read.ok) return { imported: false, error: read.error };
+    // a section the file doesn't carry is left as it is — backups made before
+    // the balances tab existed must not wipe today's snapshots
+    if (read.trades) store.replaceAll(read.trades);
+    if (read.balances) balanceStore.replaceAll(read.balances);
+    if (read.cashflows) balanceStore.replaceAllFlows(read.cashflows);
+    if (read.config) config.importAll(read.config);
+    return { imported: true, counts: read.counts, summary: backup.summary(read.counts) };
   });
 }
 

@@ -119,25 +119,33 @@ test('estimatePayout: null when no MOEX leg present', () => {
   ] }, 0.06), null);
 });
 
-// Swap — the overnight financing charge, entered in roubles like payout and
-// adjustment, and folded into the net profit the same way.
-test('netProfitRub — swap is added alongside payout and adjustment', () => {
-  const withSwap = { ...trade1, swap: -420 };
-  near(calc.netProfitRub(withSwap), calc.netProfitRub(trade1) - 420);
+// Swap — the overnight financing charge. Entered per leg, in roubles, next to
+// that leg's fee; the trade's swap is the sum of its legs.
+const legSwap = (t, a, b) => ({
+  ...t,
+  legs: [{ ...t.legs[0], swapRub: a }, { ...t.legs[1], swapRub: b }],
 });
 
-test('netProfitRub — a positive swap increases the net profit', () => {
-  near(calc.netProfitRub({ ...trade1, swap: 150 }), calc.netProfitRub(trade1) + 150);
+test('swapTotalRub — sums the per-leg swap', () => {
+  near(calc.swapTotalRub(legSwap(trade1, -300, -120)), -420);
+  near(calc.swapTotalRub(trade1), 0);
+});
+
+test('netProfitRub — the legs\' swap lands in the net profit', () => {
+  near(calc.netProfitRub(legSwap(trade1, -300, -120)), calc.netProfitRub(trade1) - 420);
+  near(calc.netProfitRub(legSwap(trade1, 100, 50)), calc.netProfitRub(trade1) + 150);
 });
 
 test('netProfitRub — trades saved before swap existed still compute', () => {
-  assert.ok(!('swap' in trade1));
+  assert.ok(!('swapRub' in trade1.legs[0]));
   near(calc.netProfitRub(trade1), 1044.40, 0.05);
-  near(calc.netProfitRub({ ...trade1, swap: null }), 1044.40, 0.05);
-  near(calc.netProfitRub({ ...trade1, swap: '' }), 1044.40, 0.05);
+  near(calc.netProfitRub(legSwap(trade1, null, '')), 1044.40, 0.05);
 });
 
-test('computeTrade — exposes the swap it applied', () => {
-  assert.strictEqual(calc.computeTrade({ ...trade1, swap: -420 }).swap, -420);
-  assert.strictEqual(calc.computeTrade(trade1).swap, 0);
+test('computeTrade — reports swap per leg and for the trade', () => {
+  const c = calc.computeTrade(legSwap(trade1, -300, -120));
+  near(c.swapTotalRub, -420);
+  near(c.legs[0].swapRub, -300);
+  near(c.legs[1].swapRub, -120);
+  near(calc.computeTrade(trade1).swapTotalRub, 0);
 });

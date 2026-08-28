@@ -26,12 +26,15 @@ function legInputs(title, leg, defaultEx) {
   const units = el('input', { type: 'number', step: 'any', value: leg.units ?? '' });
   const exit = el('input', { type: 'number', step: 'any', value: leg.exitPrice ?? '' });
   const fee = el('input', { type: 'number', step: 'any', value: leg.feeRub ?? '' });
+  // swap sits with the fee: both are per-leg rouble costs of holding this side
+  const swap = el('input', { type: 'number', step: 'any', value: leg.swapRub ?? '' });
   const box = el('div', { class: 'leg-box' }, [
     el('div', { class: 'leg-head' }, [txt(title)]),
     el('div', { class: 'grid' }, [
       field('Биржа', ex), field('Сделка', side),
       field('Цена вход', entry), field('Кол-во единиц', units),
       field('Цена выход', exit), field('Комиссия ₽', fee),
+      field('Своп ₽', swap),
     ]),
   ]);
   return { box, read: () => ({
@@ -40,7 +43,8 @@ function legInputs(title, leg, defaultEx) {
     units: Number(units.value),
     exitPrice: exit.value === '' ? null : Number(exit.value),
     feeRub: fee.value === '' ? 0 : Number(fee.value),
-  }), inputs: [ex, side, entry, units, exit, fee] };
+    swapRub: swap.value === '' ? 0 : Number(swap.value),
+  }), inputs: [ex, side, entry, units, exit, fee, swap] };
 }
 
 async function openForm(trade, onSaved) {
@@ -94,8 +98,6 @@ async function openForm(trade, onSaved) {
 
   // payout with an "авто" toggle (computed estimate ↔ manual entry)
   const payout = el('input', { type: 'number', step: 'any', value: t.payout ?? 0 });
-  // swap: overnight financing, entered in roubles like payout; usually negative
-  const swap = el('input', { type: 'number', step: 'any', value: t.swap ?? 0 });
   const payoutAuto = el('input', { type: 'checkbox' });
   payoutAuto.checked = trade ? !!t.payoutAuto : true; // existing trades default to manual
   const autoToggle = el('label', { class: 'auto-toggle' }, [payoutAuto, txt('авто')]);
@@ -111,7 +113,6 @@ async function openForm(trade, onSaved) {
   const currentRate = () => (Number(rate.value) || 0) / 100;
   function draft() {
     return { usdRub: Number(usdRub.value) || 0, payout: Number(payout.value) || 0,
-      swap: Number(swap.value) || 0,
       adjustment: Number(t.adjustment) || 0, closeDate: closeDate.value,
       legs: [leg1.read(), leg2.read()] };
   }
@@ -148,12 +149,12 @@ async function openForm(trade, onSaved) {
       item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
       item('Позиция', `${usd0(posSum('start'))} → ${usd0(posSum('end'))}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
-      item('Своп', F.fmtRub(Number(swap.value) || 0), sc(Number(swap.value) || 0)),
+      item('Своп', F.fmtRub(c.swapTotalRub), sc(c.swapTotalRub)),
       item('Чистый профит', F.fmtRub(c.netProfitRub) || '—', sc(c.netProfitRub)),
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),
     );
   }
-  [usdRub, rate, payout, swap, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
+  [usdRub, rate, payout, closeDate, ...leg1.inputs, ...leg2.inputs].forEach((i) =>
     i.addEventListener('input', recompute));
   payoutAuto.addEventListener('change', recompute);
 
@@ -197,7 +198,6 @@ async function openForm(trade, onSaved) {
         el('label', {}, [txt('Тип'), type, typeList]), el('label', {}, [txt('Тикер'), ticker, tickerList]),
         el('label', {}, [txt('Тег'), tag, tagList]), usdRubField,
         field('Ставка payout, %', rate), payoutField,
-        field('Своп ₽', swap),
         field('Комментарий', comment, 'full'),
       ]),
       exList,
@@ -227,8 +227,7 @@ async function openForm(trade, onSaved) {
     const payload = {
       openDate: openDate.value, closeDate: closeDate.value, type: typeValue,
       ticker: tickerValue, tag: tagValue, usdRub: Number(usdRub.value) || 0,
-      payout: Number(payout.value) || 0, swap: Number(swap.value) || 0,
-      adjustment: Number(t.adjustment) || 0,
+      payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: [leg1.read(), leg2.read()],
     };

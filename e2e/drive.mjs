@@ -187,7 +187,7 @@ try {
     /MOEX/.test(detail) && /FOREX/.test(detail) && /→/.test(detail), detail);
   // the labels render uppercase via CSS, and innerText returns them transformed
   check('every column in the expanded trade is labelled',
-    ['Биржа', 'Сделка', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'PnL ноги']
+    ['Биржа', 'Сделка', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'Своп', 'PnL ноги']
       .every((l) => detail.toLowerCase().includes(l.toLowerCase())), detail);
   check('expanded detail lists payout and swap under their own labels',
     /payout/i.test(detail) && /своп/i.test(detail), detail);
@@ -381,25 +381,35 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
+  // swap lives on each leg now, beside that leg's fee
   const swapRes = await page.evaluate(() => {
-    const label = [...document.querySelectorAll('.modal > .grid > label')]
-      .find((l) => /своп/i.test(l.textContent));
+    const legBox = document.querySelectorAll('.leg-box')[0];
+    const label = [...legBox.querySelectorAll('label')].find((l) => /своп/i.test(l.textContent));
     if (!label) return { missing: true };
     const input = label.querySelector('input');
     const before = document.querySelector('.live').innerText;
     input.value = '-500';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     const after = document.querySelector('.live').innerText;
-    input.value = '0';
+    input.value = '';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    return { before, after, restored: document.querySelector('.live').innerText };
+    return {
+      before, after,
+      restored: document.querySelector('.live').innerText,
+      sharedSwapGone: ![...document.querySelectorAll('.modal > .grid > label')]
+        .some((l) => /своп/i.test(l.textContent)),
+      perLegFields: [...document.querySelectorAll('.leg-box')]
+        .filter((b) => [...b.querySelectorAll('label')].some((l) => /своп/i.test(l.textContent))).length,
+    };
   });
   const netFrom = (text) => {
     const m = text.replace(/\s/g, '').match(/ЧИСТЫЙПРОФИТ(-?[\d]+),(\d{2})/i);
     return m ? parseFloat(`${m[1]}.${m[2]}`) : NaN;
   };
-  check('form has a swap field', !swapRes.missing, JSON.stringify(swapRes).slice(0, 120));
-  check('a -500 ₽ swap lowers the net profit by exactly that',
+  check('each leg has its own swap field, the shared one is gone',
+    !swapRes.missing && swapRes.perLegFields === 2 && swapRes.sharedSwapGone,
+    JSON.stringify({ ...swapRes, before: undefined, after: undefined, restored: undefined }));
+  check('a -500 ₽ swap on one leg lowers the net profit by exactly that',
     Math.abs((netFrom(swapRes.before) - netFrom(swapRes.after)) - 500) < 0.05,
     `${netFrom(swapRes.before)} -> ${netFrom(swapRes.after)}`);
   check('clearing the swap restores the net profit',

@@ -134,7 +134,7 @@ function header() {
 // "MOEX ↑" — the arrow says the side, so Лонг/Шорт doesn't need the words here
 function legChip(leg) {
   const long = leg.side === 'Шорт' ? false : true;
-  const chip = el('span', 'leg-chip');
+  const chip = el('span', 'leg-chip ' + (long ? 'long' : 'short'));
   chip.append(el('span', 'ex', leg.exchange || '—'));
   chip.append(el('span', 'dir ' + (long ? 'pos' : 'neg'), long ? '↑' : '↓'));
   chip.title = `${leg.exchange}: ${leg.side}`;

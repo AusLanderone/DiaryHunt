@@ -782,3 +782,18 @@ canvas { display: block; width: 100%; }
 .curve-legend .swatch.journal {
   background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 9px);
 }
+
+/* ---------- balance curve tooltip ---------- */
+.chart-tip .tip-row, .chart-tip .tip-acc {
+  display: flex; justify-content: space-between; gap: 18px;
+  margin-top: 3px; font-size: 12px;
+}
+.chart-tip .tip-row > span:first-child,
+.chart-tip .tip-acc > span:first-child { color: var(--muted); }
+.chart-tip .tip-acc > span:last-child {
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+}
+.chart-tip .tip-sep {
+  height: 1px; margin: 7px 0 5px;
+  background: var(--line);
+}

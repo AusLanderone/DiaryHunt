@@ -23,6 +23,29 @@ const shortDate = (iso) => {
   return p.length === 3 ? `${Number(p[2])} ${MON[Number(p[1]) - 1] || p[1]} ${p[0]}` : '—';
 };
 
+// ---------- hover tooltip (shares #dh-chart-tip with the stats charts) ----------
+
+function chartTip() {
+  let tip = document.getElementById('dh-chart-tip');
+  if (!tip) {
+    tip = document.createElement('div');
+    tip.id = 'dh-chart-tip';
+    tip.className = 'chart-tip';
+    document.body.appendChild(tip);
+  }
+  return tip;
+}
+
+function showTip(html, e) {
+  const tip = chartTip();
+  tip.innerHTML = html;
+  tip.style.display = 'block';
+  tip.style.left = Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8) + 'px';
+  tip.style.top = Math.min(e.clientY + 14, window.innerHeight - tip.offsetHeight - 8) + 'px';
+}
+
+const hideTip = () => { chartTip().style.display = 'none'; };
+
 // ₽ or $ — the toggle above the curve; survives re-renders
 const state = { unit: 'rub' };
 let ctx = null;   // { container, snapshots, trades }
@@ -195,6 +218,8 @@ function openSnapshotForm(existing) {
 
 function drawCurve(canvas, rows, journal, unit) {
   const H = 320, padL = 64, padR = 16, padTop = 18, padBot = 30;
+
+  function render(hoverIdx) {
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth || 900;
   const c = canvas.getContext('2d');
@@ -203,7 +228,7 @@ function drawCurve(canvas, rows, journal, unit) {
   c.setTransform(dpr, 0, 0, dpr, 0, 0);
   c.clearRect(0, 0, W, H);
   c.font = '10.5px "Cascadia Code", Consolas, monospace';
-  if (!rows.length) return;
+  if (!rows.length) return null;
 
   const toUnit = (v, row) => (unit === 'rub' ? v : (row.usdRub ? v / row.usdRub : null));
   const actual = rows.map((r) => toUnit(r.rub, r));
@@ -254,7 +279,22 @@ function drawCurve(canvas, rows, journal, unit) {
   actual.forEach((v, i) => (i ? c.lineTo(x(i), y(v)) : c.moveTo(x(i), y(v))));
   c.stroke();
   c.fillStyle = pos;
-  actual.forEach((v, i) => { c.beginPath(); c.arc(x(i), y(v), 3, 0, Math.PI * 2); c.fill(); });
+  actual.forEach((v, i) => {
+    c.beginPath();
+    c.arc(x(i), y(v), i === hoverIdx ? 5.5 : 3, 0, Math.PI * 2);
+    c.fill();
+  });
+
+  // the hovered snapshot: a vertical guide through both lines
+  if (hoverIdx >= 0 && hoverIdx < rows.length) {
+    c.strokeStyle = muted; c.globalAlpha = 0.5; c.lineWidth = 1; c.setLineDash([3, 3]);
+    c.beginPath(); c.moveTo(x(hoverIdx), padTop); c.lineTo(x(hoverIdx), H - padBot); c.stroke();
+    c.setLineDash([]); c.globalAlpha = 1;
+    if (line[hoverIdx] !== null) {
+      c.fillStyle = accent;
+      c.beginPath(); c.arc(x(hoverIdx), y(line[hoverIdx]), 4, 0, Math.PI * 2); c.fill();
+    }
+  }
 
   c.textAlign = 'center'; c.textBaseline = 'top'; c.fillStyle = muted;
   const step = Math.max(1, Math.ceil(rows.length / Math.max(1, Math.floor((W - padL - padR) / 70))));
@@ -262,6 +302,42 @@ function drawCurve(canvas, rows, journal, unit) {
     if (i % step !== 0 && i !== rows.length - 1) return;
     c.fillText(shortDate(r.date).replace(/ \d{4}$/, ''), x(i), H - padBot + 8);
   });
+
+  return { x, W };
+  }
+
+  let geom = render(-1);
+
+  // what the hovered snapshot actually held, plus how it compares to the journal
+  function tipHtml(i) {
+    const row = rows[i];
+    const money = unit === 'rub' ? rub : usd;
+    const toUnit = (v) => (unit === 'rub' ? v : (row.usdRub ? v / row.usdRub : null));
+    const drift = journal[i] === null ? null : row.rub - journal[i];
+    const accounts = (row.accounts || []).map((a) =>
+      `<div class="tip-acc"><span>${a.name}</span><span>${Number(a.amount).toLocaleString('ru-RU')} ${a.ccy === 'RUB' ? '₽' : '$'}</span></div>`).join('');
+    return `<b>${shortDate(row.date)}</b>`
+      + `<div class="tip-row"><span>по отметкам</span><span class="tv">${money(toUnit(row.rub))}</span></div>`
+      + `<div class="tip-row"><span>по журналу</span><span class="tv">${money(toUnit(journal[i]))}</span></div>`
+      + `<div class="tip-row"><span>расхождение</span><span class="tv ${sign(drift)}">${money(toUnit(drift))}</span></div>`
+      + (accounts ? `<div class="tip-sep"></div>${accounts}` : '')
+      + `<div class="tip-sub">курс ${row.usdRub || '—'}${row.comment ? ' · ' + row.comment : ''}</div>`;
+  }
+
+  canvas.onmousemove = (e) => {
+    if (!geom || !rows.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    let best = 0, bestD = Infinity;
+    rows.forEach((_, i) => {
+      const d = Math.abs(geom.x(i) - mx);
+      if (d < bestD) { bestD = d; best = i; }
+    });
+    if (bestD > 60) { canvas.onmouseleave(); return; }
+    geom = render(best);
+    showTip(tipHtml(best), e);
+  };
+  canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
 }
 
 // ---------- pieces of the page ----------

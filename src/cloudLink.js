@@ -80,4 +80,18 @@ function parseResponse(text) {
   return { ok: true, data: json };
 }
 
-module.exports = { classify, parseResponse, SCRIPT_CODE, SCRIPT_RE };
+// Apps Script answers 403 to an anonymous request whenever the deployment was
+// published for «Все, у кого есть аккаунт Google» rather than «Все» — the app
+// has no browser session, so that is the one to name first.
+function explainHttp(status) {
+  if (status === 403) {
+    return 'Скрипт отвечает «доступ запрещён». В развёртывании выберите «У кого есть доступ: Все» '
+      + '(вариант «Все, у кого есть аккаунт Google» не подойдёт) и разверните новую версию.';
+  }
+  if (status === 401) return 'Скрипт требует входа в аккаунт — откройте доступ «Все» в развёртывании';
+  if (status === 404) return 'По ссылке ничего нет — проверьте, что скопирован адрес развёртывания …/exec';
+  if (status >= 500) return `Скрипт ответил ошибкой ${status} — проверьте код в Apps Script`;
+  return `Облако ответило ${status}`;
+}
+
+module.exports = { classify, parseResponse, explainHttp, SCRIPT_CODE, SCRIPT_RE };

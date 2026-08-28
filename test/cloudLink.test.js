@@ -77,3 +77,16 @@ test('SCRIPT_CODE — the snippet handed to the user covers both directions', ()
   assert.match(link.SCRIPT_CODE, /function doPost/);
   assert.match(link.SCRIPT_CODE, /diaryhunt-db\.json/);
 });
+
+test('explainHttp — 403 names the real cause instead of the number', () => {
+  const m = link.explainHttp(403);
+  assert.match(m, /все/i, m);
+  assert.match(m, /развёртыван|доступ/i, m);
+});
+
+test('explainHttp — other codes are explained in their own terms', () => {
+  assert.match(link.explainHttp(404), /не найден|ссылк/i);
+  assert.match(link.explainHttp(401), /доступ|вход/i);
+  assert.match(link.explainHttp(500), /скрипт|ошибка/i);
+  assert.match(link.explainHttp(418), /418/);
+});

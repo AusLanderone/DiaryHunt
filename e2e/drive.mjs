@@ -91,7 +91,7 @@ try {
   await page.evaluate((t) => window.api.trades.add(t), trade1);
   await page.evaluate((t) => window.api.trades.add(t), trade3);
   await page.reload();
-  await page.waitForSelector('table', { timeout: 10000 });
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
   await page.screenshot({ path: path.join(SHOT, '02-journal.png') });
   // total ≈ 1044.40 + 3923.97 = 4968.37 ₽ (may render 4968.36 — app sums raw
   // floats then rounds, vs summing already-rounded cents; ±1 kopeck is expected).
@@ -99,6 +99,61 @@ try {
   const totalMatch = totalTxt.replace(/\s/g, '').match(/(\d+),(\d{2})/);
   const totalNum = totalMatch ? parseFloat(`${totalMatch[1]}.${totalMatch[2]}`) : NaN;
   check('journal ИТОГО ≈ 4968.37 ₽ (±0.05)', near(totalNum, 4968.37, 0.05), `parsed ${totalNum} from "${totalTxt}"`);
+
+  const journal = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.trade-row')];
+    return {
+      rows: rows.length,
+      months: [...document.querySelectorAll('.month-head .m-name')].map((m) => m.textContent),
+      firstRow: rows[0]?.innerText.replace(/\n/g, ' | '),
+      filters: [...document.querySelectorAll('.journal-bar .chip')].map((c) => c.textContent),
+      sortable: document.querySelectorAll('.journal-head .sortable').length,
+      overflow: document.querySelector('.journal-scroll').scrollWidth
+        - document.querySelector('.journal-scroll').clientWidth,
+      footer: document.querySelector('.journal-total .lbl').innerText.replace(/\n/g, ' '),
+    };
+  });
+  check('one row per trade, not per leg', journal.rows === 2, `${journal.rows} rows`);
+  check('trades are grouped under their month', journal.months.length === 1
+    && /август 2026/i.test(journal.months[0]), journal.months.join('|'));
+  // default sort is newest first, so the top row is whichever trade has the highest №
+  check('a row carries date, ticker, legs, spread and net profit',
+    /\d+ авг/.test(journal.firstRow) && /(ED|SILV)/.test(journal.firstRow)
+    && /MOEX/.test(journal.firstRow) && /%/.test(journal.firstRow) && /₽/.test(journal.firstRow),
+    journal.firstRow);
+  check('status filters and sortable headers are present',
+    journal.filters.length === 3 && journal.sortable === 5, JSON.stringify(journal.filters));
+  check('journal never scrolls sideways', journal.overflow <= 0, `overflow ${journal.overflow}px`);
+  check('footer summarises the visible trades', /сделок/i.test(journal.footer) && /винрейт/i.test(journal.footer), journal.footer);
+
+  // expanding a trade reveals the per-leg numbers
+  await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
+  await page.waitForSelector('.trade-detail', { timeout: 5000 });
+  const detail = await page.evaluate(() => document.querySelector('.trade-detail').innerText.replace(/\n/g, ' | '));
+  check('expanded detail shows both legs with prices, size and fees',
+    /MOEX/.test(detail) && /FOREX/.test(detail) && /комса/.test(detail)
+    && /шт/.test(detail) && /→/.test(detail), detail);
+  await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
+
+  // filters actually filter
+  const filtered = await page.evaluate(async () => {
+    const type = (v) => {
+      const s = document.querySelector('.journal-bar .search');
+      s.value = v; s.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    type('silv');
+    const afterSearch = document.querySelectorAll('.trade-row').length;
+    type('');
+    [...document.querySelectorAll('.journal-bar .chip')].find((b) => b.textContent === 'Открытые').click();
+    const afterOpen = document.querySelectorAll('.trade-row').length;
+    const emptyNote = document.querySelector('.journal-scroll .empty')?.textContent || '';
+    [...document.querySelectorAll('.journal-bar .chip')].find((b) => b.textContent === 'Все').click();
+    return { afterSearch, afterOpen, emptyNote, restored: document.querySelectorAll('.trade-row').length };
+  });
+  check('search narrows the journal to matching trades', filtered.afterSearch === 1, JSON.stringify(filtered));
+  check('an empty result explains itself instead of showing a blank page',
+    filtered.afterOpen === 0 && /ничего не подошло/i.test(filtered.emptyNote), JSON.stringify(filtered));
+  check('clearing the filter brings every trade back', filtered.restored === 2, JSON.stringify(filtered));
 
   console.log('\n[3] stats');
   await page.evaluate(() => document.querySelector('#tab-stats').click());

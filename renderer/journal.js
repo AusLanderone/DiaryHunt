@@ -1,132 +1,296 @@
-function td(value, cls) {
-  const el = document.createElement('td');
-  if (cls) el.className = cls;
-  el.textContent = value;
-  return el;
-}
+// The journal reads as a diary: one row per trade, months as blocks, details on
+// demand. Filters/sort/grouping live in src/journalView.js — this file draws.
+// IIFE-scoped so its helpers don't collide with form.js / stats.js.
+(function () {
 
-function tdNode(node, cls) {
-  const el = document.createElement('td');
-  if (cls) el.className = cls;
-  if (node) el.appendChild(node);
-  return el;
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
 }
 
 function pill(text, kind) {
-  const s = document.createElement('span');
-  s.className = 'pill ' + kind;
-  s.textContent = text;
-  return s;
+  return el('span', 'pill ' + kind, text);
 }
 
 const signCls = (n) => (n == null ? '' : n > 0 ? 'pos' : n < 0 ? 'neg' : '');
+const V = () => window.journalView;
 
-const HEAD = ['№', 'Откр', 'Закр', 'Тип', 'Тикер', 'Тег', 'Биржа', 'Сделка',
-  'Цена вход', 'Кол-во', 'Цена выход', 'Комса', 'Вход спред', 'Спред итог',
-  'PnL ноги', 'PnL net', 'Чистый ₽', ''];
+// "13 авг", or "13 авг 2025" once the year stops being the current one
+const MON_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+function shortDate(iso) {
+  const p = String(iso || '').split('-');
+  if (p.length !== 3) return '—';
+  const label = `${Number(p[2])} ${MON_SHORT[Number(p[1]) - 1] || p[1]}`;
+  return Number(p[0]) === new Date().getFullYear() ? label : `${label} ${p[0]}`;
+}
 
-function renderJournal(container, trades, { onEdit, onDelete }) {
+// prices carry 5 decimals in the data but read better trimmed in a list
+const price = (n) => (n === null || n === undefined || n === '' ? '—'
+  : Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 5 }));
+const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
+  : (n * 100).toFixed(2).replace('.', ',') + '%');
+const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+
+// view state survives re-renders (adding a trade shouldn't reset the filters)
+const state = {
+  query: '', status: 'all', tag: 'all', period: 'all',
+  sortKey: 'num', sortDir: 'desc',
+  expanded: new Set(),
+};
+let ctx = null;   // { container, trades, onEdit, onDelete }
+
+const STATUSES = [['all', 'Все'], ['open', 'Открытые'], ['closed', 'Закрытые']];
+const PERIODS = [['all', 'Всё время'], ['year', 'Год'], ['quarter', 'Квартал'], ['month', 'Месяц']];
+const COLUMNS = [
+  { key: 'num', label: '№', sortable: true },
+  { key: 'date', label: 'Дата', sortable: true },
+  { key: 'ticker', label: 'Тикер', sortable: true },
+  { label: 'Тег' },
+  { label: 'Ноги' },
+  { key: 'spread', label: 'Спред вход → итог', sortable: true, right: true },
+  { key: 'profit', label: 'Чистый', sortable: true, right: true },
+  { label: '' },
+];
+
+const rerender = () => renderJournal(ctx.container, ctx.trades, ctx);
+
+// ---------- filter bar ----------
+
+function filterBar(trades) {
+  const bar = el('div', 'journal-bar');
+
+  const search = el('input', 'search');
+  search.type = 'search';
+  search.placeholder = 'Поиск: тикер, тег, тип, комментарий';
+  search.value = state.query;
+  search.oninput = () => { state.query = search.value; rerender(); };
+  bar.appendChild(search);
+
+  const chips = el('div', 'chips');
+  STATUSES.forEach(([key, label]) => {
+    const b = el('button', 'chip' + (state.status === key ? ' active' : ''), label);
+    b.onclick = () => { state.status = key; rerender(); };
+    chips.appendChild(b);
+  });
+  bar.appendChild(chips);
+
+  const tags = [...new Set(trades.map((t) => t.tag).filter(Boolean))].sort();
+  const tagSel = el('select', 'sel');
+  tagSel.append(new Option('Все теги', 'all'), ...tags.map((t) => new Option(t, t)));
+  tagSel.value = tags.includes(state.tag) ? state.tag : 'all';
+  tagSel.onchange = () => { state.tag = tagSel.value; rerender(); };
+  bar.appendChild(tagSel);
+
+  const perSel = el('select', 'sel');
+  perSel.append(...PERIODS.map(([k, l]) => new Option(l, k)));
+  perSel.value = state.period;
+  perSel.onchange = () => { state.period = perSel.value; rerender(); };
+  bar.appendChild(perSel);
+
+  return bar;
+}
+
+// ---------- sortable header ----------
+
+function header() {
+  const head = el('div', 'journal-head');
+  COLUMNS.forEach((col) => {
+    const cell = el('div', 'jh' + (col.right ? ' right' : ''));
+    cell.textContent = col.label;
+    if (col.sortable) {
+      cell.classList.add('sortable');
+      if (state.sortKey === col.key) {
+        cell.classList.add('active');
+        cell.append(el('span', 'arrow', state.sortDir === 'asc' ? '▲' : '▼'));
+      }
+      cell.onclick = () => {
+        if (state.sortKey === col.key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        else { state.sortKey = col.key; state.sortDir = col.key === 'ticker' ? 'asc' : 'desc'; }
+        rerender();
+      };
+    }
+    head.appendChild(cell);
+  });
+  return head;
+}
+
+// ---------- one trade ----------
+
+// "MOEX ↑" — the arrow says the side, so Лонг/Шорт doesn't need the words here
+function legChip(leg) {
+  const long = leg.side === 'Шорт' ? false : true;
+  const chip = el('span', 'leg-chip');
+  chip.append(el('span', 'ex', leg.exchange || '—'));
+  chip.append(el('span', 'dir ' + (long ? 'pos' : 'neg'), long ? '↑' : '↓'));
+  chip.title = `${leg.exchange}: ${leg.side}`;
+  return chip;
+}
+
+function tradeRow(trade, c) {
+  const closed = c.closed;
+  const profit = closed ? c.netProfitRub : null;
+  const stateCls = !closed ? 'open' : profit >= 0 ? 'pos' : 'neg';
+  const row = el('div', `trade-row state-${stateCls}` + (state.expanded.has(trade.id) ? ' expanded' : ''));
+
+  row.append(el('div', 'jc num', String(trade.num)));
+
+  const date = el('div', 'jc date');
+  date.append(el('span', 'd1', shortDate(trade.openDate)));
+  if (closed && trade.closeDate !== trade.openDate) {
+    date.append(el('span', 'd2', '→ ' + shortDate(trade.closeDate)));
+  }
+  row.append(date);
+
+  const tick = el('div', 'jc ticker');
+  tick.append(el('span', 'tk', trade.ticker || '—'));
+  if (trade.type) tick.append(el('span', 'ty', trade.type));
+  row.append(tick);
+
+  const tagCell = el('div', 'jc tag');
+  if (trade.tag) tagCell.append(el('span', 'tag-chip', trade.tag));
+  row.append(tagCell);
+
+  const legs = el('div', 'jc legs');
+  trade.legs.forEach((leg, i) => {
+    if (i) legs.append(el('span', 'vs', '·'));
+    legs.append(legChip(leg));
+  });
+  row.append(legs);
+
+  const spread = el('div', 'jc spread');
+  spread.append(el('span', 'sp-in', pct2(c.entrySpread)));
+  spread.append(el('span', 'sp-arrow', '→'));
+  spread.append(el('span', 'sp-out' + (closed ? '' : ' muted'), closed ? pct2(c.exitSpread) : '—'));
+  row.append(spread);
+
+  const money = el('div', 'jc money');
+  if (closed) money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));
+  else money.append(pill('открыта', 'open'));
+  row.append(money);
+
+  const act = el('div', 'jc actions');
+  const edit = el('button', 'btn icon', '✎');
+  edit.title = 'Редактировать';
+  edit.onclick = (e) => { e.stopPropagation(); ctx.onEdit(trade); };
+  const del = el('button', 'btn icon', '✕');
+  del.title = 'Удалить';
+  del.onclick = (e) => { e.stopPropagation(); ctx.onDelete(trade); };
+  act.append(edit, del, el('span', 'caret', '⌄'));
+  row.append(act);
+
+  row.onclick = () => {
+    if (state.expanded.has(trade.id)) state.expanded.delete(trade.id);
+    else state.expanded.add(trade.id);
+    rerender();
+  };
+  return row;
+}
+
+// the numbers that don't fit the row, shown when a trade is expanded
+function tradeDetail(trade, c) {
   const F = window.format;
+  const box = el('div', 'trade-detail');
+
+  const legs = el('div', 'detail-legs');
+  trade.legs.forEach((leg, i) => {
+    const lc = c.legs[i];
+    const line = el('div', 'detail-leg');
+    line.append(el('span', 'ex', leg.exchange || '—'));
+    line.append(el('span', 'side ' + (leg.side === 'Шорт' ? 'neg' : 'pos'), leg.side || '—'));
+    line.append(el('span', 'prices', `${price(leg.entryPrice)} → ${price(leg.exitPrice)}`));
+    line.append(el('span', 'units', F.fmtNum(leg.units) + ' шт'));
+    line.append(el('span', 'fee', 'комса ' + rub0(Number(leg.feeRub) || 0)));
+    line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
+    legs.append(line);
+  });
+  box.append(legs);
+
+  const meta = el('div', 'detail-meta');
+  const item = (k, v, cls) => {
+    const i = el('span', 'mi');
+    i.append(el('span', 'k', k), el('span', 'v' + (cls ? ' ' + cls : ''), v));
+    return i;
+  };
+  meta.append(
+    item('Курс', String(trade.usdRub || '—')),
+    item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),
+    item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),
+    item('Комиссии', rub0(c.feeTotalRub), 'neg'),
+    item('Пейаут', rub0(Number(trade.payout) || 0), signCls(Number(trade.payout) || 0)),
+  );
+  if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
+  box.append(meta);
+
+  if (trade.comment) box.append(el('div', 'detail-comment', trade.comment));
+  return box;
+}
+
+// ---------- month block ----------
+
+function monthBlock(group) {
+  const box = el('div', 'month');
+  const head = el('div', 'month-head');
+  head.append(el('span', 'm-name', group.label));
+  const counts = group.openCount
+    ? `${group.count} сд · ${group.openCount} открыто`
+    : `${group.count} сд`;
+  head.append(el('span', 'm-count', counts));
+  head.append(el('span', 'm-sum ' + signCls(group.profit), window.format.fmtRub(group.profit)));
+  box.append(head);
+
+  group.trades.forEach((trade) => {
+    const c = window.calc.computeTrade(trade);
+    box.append(tradeRow(trade, c));
+    if (state.expanded.has(trade.id)) box.append(tradeDetail(trade, c));
+  });
+  return box;
+}
+
+// ---------- footer ----------
+
+function totalBar(sum) {
+  const foot = el('div', 'journal-total');
+  const left = el('div', 'lbl');
+  left.append(el('span', '', `${sum.count} сделок`));
+  if (sum.open) left.append(el('span', 'sep', '·'), el('span', 'open-note', `${sum.open} открыто`));
+  if (sum.winrate !== null) {
+    left.append(el('span', 'sep', '·'), el('span', '', `винрейт ${sum.winrate.toFixed(0)}%`));
+  }
+  foot.append(left);
+  foot.append(el('span', 'val ' + signCls(sum.total), window.format.fmtRub(sum.total)));
+  return foot;
+}
+
+// ---------- entry point ----------
+
+function renderJournal(container, trades, handlers) {
+  ctx = { container, trades, onEdit: handlers.onEdit, onDelete: handlers.onDelete };
   container.innerHTML = '';
 
   if (!trades.length) {
-    const div = document.createElement('div');
-    div.className = 'empty';
-    div.textContent = 'Пока нет сделок. Нажмите «Добавить сделку», чтобы внести первую.';
-    container.appendChild(div);
+    container.append(el('div', 'empty', 'Пока нет сделок. Нажмите «Добавить сделку», чтобы внести первую.'));
     return;
   }
 
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const htr = document.createElement('tr');
-  HEAD.forEach((h, i) => {
-    const th = document.createElement('th');
-    th.textContent = h;
-    if (i <= 7) th.className = 'text'; // labels through Сделка are left-aligned
-    htr.appendChild(th);
-  });
-  thead.appendChild(htr);
-  table.appendChild(thead);
+  const wrap = el('div', 'journal');
+  wrap.append(filterBar(trades), header());
 
-  const tbody = document.createElement('tbody');
-  let total = 0;
+  const visible = V().sortTrades(
+    V().filterTrades(trades, state),
+    state.sortKey, state.sortDir,
+  );
 
-  trades.forEach((trade) => {
-    const c = window.calc.computeTrade(trade);
-    if (c.closed) total += c.netProfitRub;
-    const state = !c.closed ? 'open' : c.netProfitRub >= 0 ? 'pos' : 'neg';
-
-    trade.legs.forEach((leg, i) => {
-      const first = i === 0;
-      const lc = c.legs[i];
-      const tr = document.createElement('tr');
-      tr.className = `${first ? 'leg1' : 'leg2'} state-${state}`;
-
-      tr.appendChild(td(first ? trade.num : '', 'text'));
-      tr.appendChild(td(first ? trade.openDate : '', 'text dim'));
-      // close date, or an "открыта" pill for open trades
-      if (first) {
-        tr.appendChild(c.closed
-          ? td(trade.closeDate, 'text dim')
-          : tdNode(pill('открыта', 'open'), 'text'));
-      } else {
-        tr.appendChild(td('', 'text'));
-      }
-      tr.appendChild(td(first ? trade.type : '', 'text dim'));
-      tr.appendChild(td(first ? trade.ticker : '', 'text strong'));
-      tr.appendChild(td(first ? trade.tag : '', 'text dim'));
-      tr.appendChild(td(leg.exchange, 'text'));
-      tr.appendChild(td(leg.side, 'text'));
-      tr.appendChild(td(F.fmtUsd(leg.entryPrice)));
-      tr.appendChild(td(F.fmtNum(leg.units)));
-      tr.appendChild(td(F.fmtUsd(leg.exitPrice)));
-      tr.appendChild(td(F.fmtRub(leg.feeRub), 'dim'));
-      tr.appendChild(td(first ? F.fmtPct(c.entrySpread) : '', 'dim'));
-      tr.appendChild(td(first ? F.fmtPct(c.spreadTotal) : '', 'dim'));
-      tr.appendChild(td(F.fmtUsd(lc.gross), signCls(lc.gross)));
-      tr.appendChild(td(first ? F.fmtUsd(c.pnlNet) : '', first ? signCls(c.pnlNet) : ''));
-      tr.appendChild(td(first ? F.fmtRub(c.netProfitRub) : '',
-        first ? ('strong ' + signCls(c.netProfitRub)) : ''));
-
-      if (first) {
-        const act = document.createElement('td');
-        act.rowSpan = 2;
-        const wrap = document.createElement('span');
-        wrap.className = 'row-actions';
-        const edit = document.createElement('button');
-        edit.textContent = '✎'; edit.className = 'btn icon'; edit.title = 'Редактировать';
-        edit.onclick = () => onEdit(trade);
-        const del = document.createElement('button');
-        del.textContent = '✕'; del.className = 'btn icon'; del.title = 'Удалить';
-        del.onclick = () => onDelete(trade);
-        wrap.append(edit, del);
-        act.appendChild(wrap);
-        tr.appendChild(act);
-      }
-      tbody.appendChild(tr);
-    });
-  });
-
-  table.appendChild(tbody);
-
-  // trade list fills the view and scrolls; a thin total bar is pinned at the bottom
-  const scroll = document.createElement('div');
-  scroll.className = 'journal-scroll';
-  scroll.appendChild(table);
-
-  const foot = document.createElement('div');
-  foot.className = 'journal-total';
-  const lbl = document.createElement('span');
-  lbl.className = 'lbl'; lbl.textContent = 'Итого';
-  const val = document.createElement('span');
-  val.className = 'val ' + signCls(total); val.textContent = F.fmtRub(total);
-  foot.append(lbl, val);
-
-  const wrap = document.createElement('div');
-  wrap.className = 'journal';
-  wrap.append(scroll, foot);
-  container.appendChild(wrap);
+  const scroll = el('div', 'journal-scroll');
+  if (!visible.length) {
+    scroll.append(el('div', 'empty', 'Под фильтры ничего не подошло. Смените период или очистите поиск.'));
+  } else {
+    V().groupByMonth(visible).forEach((g) => scroll.append(monthBlock(g)));
+  }
+  wrap.append(scroll, totalBar(V().summarize(visible)));
+  container.append(wrap);
 }
 
 window.journal = { renderJournal };
+})();

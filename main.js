@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { createStore } = require('./src/store');
+const rates = require('./src/rates');
 const { createConfig } = require('./src/config');
 const { tradesToCsv } = require('./src/export');
 
@@ -23,6 +24,26 @@ function registerIpc() {
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
   ipcMain.handle('config:getSettings', () => config.getSettings());
   ipcMain.handle('config:setSettings', (_e, patch) => config.setSettings(patch));
+  // Live USD/RUB for the trade form. Network lives in main (the renderer is
+  // sandboxed); errors come back as { ok: false } so the form can show them.
+  ipcMain.handle('rates:usdRub', async () => {
+    const get = async (url) => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      try {
+        const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'DiaryHunt' } });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.text();
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+    try {
+      return { ok: true, ...(await rates.fetchUsdRub({ get })) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
   ipcMain.handle('export:csv', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog({
       defaultPath: 'diaryhunt-export.csv',

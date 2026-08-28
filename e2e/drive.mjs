@@ -202,11 +202,13 @@ try {
       setVal(e, leg.entryPrice); setVal(u, leg.units); setVal(x, leg.exitPrice); setVal(f, leg.feeRub);
     });
     // payout is auto by default (6% MOEX tax estimate)
-    const autoPayout = document.querySelector('.field-row > input').value;
+    const payoutInput = () => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /перелив/i.test(l.textContent)).querySelector('.field-row > input');
+    const autoPayout = payoutInput().value;
     // switch to manual and pin the exact sheet value
     const cb = document.querySelector('.auto-toggle input[type=checkbox]');
     if (cb.checked) { cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true })); }
-    setVal(document.querySelector('.field-row > input'), t.payout);
+    setVal(payoutInput(), t.payout);
     return { autoPayout, manualLive: document.querySelector('.live').innerText };
   }, trade1);
   await page.screenshot({ path: path.join(SHOT, '04-form-live.png') });
@@ -214,6 +216,47 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
+
+  console.log('\n[5] USD/RUB fetch button');
+  const rateUi = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.modal > .grid > label')].find((l) => /курс usd/i.test(l.textContent));
+    return { hasBtn: !!label?.querySelector('button.mini'), hasNote: !!label?.querySelector('.field-note') };
+  });
+  check('rate field has a fetch button and a source note', rateUi.hasBtn && rateUi.hasNote, JSON.stringify(rateUi));
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal button.mini')][0].click());
+  await page.waitForFunction(
+    () => !/запрашиваю/.test(document.querySelector('.field-note')?.textContent || ''),
+    null, { timeout: 20000 },
+  ).catch(() => {});
+  const fetched = await page.evaluate(() => ({
+    note: document.querySelector('.field-note').textContent,
+    err: document.querySelector('.field-note').classList.contains('err'),
+    value: [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /курс usd/i.test(l.textContent)).querySelector('input').value,
+    live: document.querySelector('.live').innerText,
+  }));
+  if (fetched.err) {
+    // offline CI: the button must still report the failure instead of hanging
+    check('rate fetch reports a failure when both sources are unreachable', !!fetched.note, fetched.note);
+  } else {
+    check('rate fetch fills the field from a named source',
+      Number(fetched.value) > 0 && /MOEX|ЦБ/.test(fetched.note), `${fetched.value} — ${fetched.note}`);
+    check('fetched rate recomputes the live totals', /чистый профит/i.test(fetched.live));
+  }
+
+  const manual = await page.evaluate(() => {
+    const input = [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /курс usd/i.test(l.textContent)).querySelector('input');
+    input.value = '90';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return { value: input.value, note: document.querySelector('.field-note').textContent, live: document.querySelector('.live').innerText };
+  });
+  check('manual entry overrides the fetched rate and drops the source note',
+    manual.value === '90' && manual.note === '', JSON.stringify(manual));
+  check('manual rate recomputes the live totals', /чистый профит/i.test(manual.live));
+  await page.screenshot({ path: path.join(SHOT, '06-form-rate.png') });
+
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

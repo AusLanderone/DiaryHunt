@@ -536,6 +536,36 @@ try {
     return t ? window.api.trades.remove(t.id) : null;
   }));
 
+  console.log('\n[7b] adding and removing a leg in the form');
+  // section [7] leaves a form open; close it so only one modal is in the DOM
+  await page.evaluate(() => {
+    const cancel = [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent));
+    if (cancel) cancel.click();
+  });
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const legCount = await page.evaluate(() => {
+    const modal = [...document.querySelectorAll('.modal')].pop();
+    const count = () => modal.querySelectorAll('.leg-box').length;
+    const start = count();
+    modal.querySelector('.add-leg').click();
+    const added = count();
+    const removable = modal.querySelectorAll('.leg-remove').length;
+    modal.querySelectorAll('.leg-remove')[0].click();
+    const removed = count();
+    return { start, added, removable, removed,
+      formula: modal.querySelector('.formula-line').textContent };
+  });
+  check('the form starts with two legs and adds a third', legCount.start === 2 && legCount.added === 3,
+    JSON.stringify(legCount));
+  check('only legs past the second can be removed', legCount.removable === 1, JSON.stringify(legCount));
+  check('removing the third leg goes back to two', legCount.removed === 2, JSON.stringify(legCount));
+  check('the formula line names every leg', (legCount.formula.match(/÷|×/g) || []).length >= 1,
+    legCount.formula);
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent)).click();
+  });
+
   console.log('\n[8] a three-leg trade');
   // synthetic USD/CNH from MOEX (SI ÷ CR) against the market cross
   await page.evaluate(() => window.api.trades.add({

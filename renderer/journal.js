@@ -34,6 +34,8 @@ const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
 const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
 const usd0 = (n) => (n === null || n === undefined ? '—'
   : '$' + Math.round(n).toLocaleString('ru-RU'));
+const usd2 = (n) => (n === null || n === undefined ? '—'
+  : (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 
 // view state survives re-renders (adding a trade shouldn't reset the filters)
 const state = {
@@ -233,7 +235,12 @@ function tradeDetail(trade, c) {
     line.append(el('span', 'units', F.fmtNum(leg.units)));
     line.append(el('span', 'pos', `${usd0(lc.start)} → ${usd0(lc.end)}`));
     line.append(el('span', 'fee', rub0(Number(leg.feeRub) || 0)));
-    line.append(el('span', 'swap ' + signCls(Number(leg.swapRub) || 0), rub0(Number(leg.swapRub) || 0)));
+    // shown as entered (₽ on MOEX, $ elsewhere); the meta line carries the ₽ total
+    const swapRaw = leg.swap !== undefined && leg.swap !== null && leg.swap !== ''
+      ? Number(leg.swap) : Number(leg.swapRub || 0);
+    const swapIsRub = window.calc.isRubLeg(leg) || leg.swap === undefined || leg.swap === null || leg.swap === '';
+    line.append(el('span', 'swap ' + signCls(swapRaw),
+      swapIsRub ? rub0(swapRaw) : usd2(swapRaw)));
     line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
     legs.append(line);
   });

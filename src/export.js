@@ -4,7 +4,7 @@ const calc = require('./calc');
 
 const HEADER = [
   '№', 'Дата открытия', 'Дата закрытия', 'Тип', 'Тикер', 'Тег',
-  'Биржа', 'Сделка', 'Цена вход', 'Кол единиц', 'Цена выход', 'Комса', 'Своп',
+  'Биржа', 'Сделка', 'Цена вход', 'Кол единиц', 'Цена выход', 'Комса', 'Своп', 'Своп валюта', 'Своп руб',
   'Позиция начало', 'Вход спред', 'Выход спред', 'Спред итог', 'Позиция конец',
   'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout',
   'Чистый профит', 'Комментарий',
@@ -36,7 +36,9 @@ function tradesToCsv(trades) {
         leg.units,
         leg.exitPrice,
         leg.feeRub,
-        leg.swapRub || 0,
+        leg.swap ?? leg.swapRub ?? 0,
+        calc.isRubLeg(leg) ? 'RUB' : 'USD',
+        lc.swapRub,
         lc.start,
         first ? c.entrySpread : '',
         first ? c.exitSpread : '',

@@ -381,38 +381,49 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
-  // swap lives on each leg now, beside that leg's fee
+  // swap lives on each leg, in that leg's currency: ₽ on MOEX, $ elsewhere
   const swapRes = await page.evaluate(() => {
-    const legBox = document.querySelectorAll('.leg-box')[0];
-    const label = [...legBox.querySelectorAll('label')].find((l) => /своп/i.test(l.textContent));
-    if (!label) return { missing: true };
-    const input = label.querySelector('input');
-    const before = document.querySelector('.live').innerText;
-    input.value = '-500';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    const after = document.querySelector('.live').innerText;
-    input.value = '';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    return {
-      before, after,
-      restored: document.querySelector('.live').innerText,
-      sharedSwapGone: ![...document.querySelectorAll('.modal > .grid > label')]
-        .some((l) => /своп/i.test(l.textContent)),
-      perLegFields: [...document.querySelectorAll('.leg-box')]
-        .filter((b) => [...b.querySelectorAll('label')].some((l) => /своп/i.test(l.textContent))).length,
+    const swapLabel = (i) => [...document.querySelectorAll('.leg-box')[i].querySelectorAll('label')]
+      .find((l) => /своп/i.test(l.textContent));
+    const labels = [swapLabel(0).textContent.trim(), swapLabel(1).textContent.trim()];
+    const net = () => document.querySelector('.live').innerText;
+    const set = (i, v) => {
+      const input = swapLabel(i).querySelector('input');
+      input.value = v;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
     };
+    const before = net();
+    set(0, '-300');                       // MOEX leg: roubles
+    const afterRub = net();
+    set(0, '');
+    set(1, '-4');                         // FOREX leg: dollars at 83.70
+    const afterUsd = net();
+    set(1, '');
+    // switching a leg's exchange switches the currency of its swap field
+    const exInput = document.querySelectorAll('.leg-box')[1].querySelector('input');
+    const wasForex = exInput.value;
+    exInput.value = 'MOEX';
+    exInput.dispatchEvent(new Event('input', { bubbles: true }));
+    const relabelled = swapLabel(1).textContent.trim();
+    exInput.value = wasForex;
+    exInput.dispatchEvent(new Event('input', { bubbles: true }));
+    return { labels, before, afterRub, afterUsd, relabelled, restored: net() };
   });
   const netFrom = (text) => {
     const m = text.replace(/\s/g, '').match(/ЧИСТЫЙПРОФИТ(-?[\d]+),(\d{2})/i);
     return m ? parseFloat(`${m[1]}.${m[2]}`) : NaN;
   };
-  check('each leg has its own swap field, the shared one is gone',
-    !swapRes.missing && swapRes.perLegFields === 2 && swapRes.sharedSwapGone,
-    JSON.stringify({ ...swapRes, before: undefined, after: undefined, restored: undefined }));
-  check('a -500 ₽ swap on one leg lowers the net profit by exactly that',
-    Math.abs((netFrom(swapRes.before) - netFrom(swapRes.after)) - 500) < 0.05,
-    `${netFrom(swapRes.before)} -> ${netFrom(swapRes.after)}`);
-  check('clearing the swap restores the net profit',
+  check('MOEX leg asks for the swap in roubles, the other leg in dollars',
+    /₽/.test(swapRes.labels[0]) && /\$/.test(swapRes.labels[1]), swapRes.labels.join(' | '));
+  check('a -300 ₽ swap on the MOEX leg costs exactly 300 ₽',
+    Math.abs((netFrom(swapRes.before) - netFrom(swapRes.afterRub)) - 300) < 0.05,
+    `${netFrom(swapRes.before)} -> ${netFrom(swapRes.afterRub)}`);
+  check('a -$4 swap on the FOREX leg converts at the trade rate (83.70)',
+    Math.abs((netFrom(swapRes.before) - netFrom(swapRes.afterUsd)) - 4 * 83.7) < 0.05,
+    `${netFrom(swapRes.before)} -> ${netFrom(swapRes.afterUsd)}`);
+  check('switching a leg to MOEX switches its swap to roubles',
+    /₽/.test(swapRes.relabelled), swapRes.relabelled);
+  check('clearing the swaps restores the net profit',
     Math.abs(netFrom(swapRes.restored) - netFrom(swapRes.before)) < 0.05, swapRes.restored);
 
   check('form live panel shows exit spread and position value',

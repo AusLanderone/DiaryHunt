@@ -91,16 +91,29 @@ function valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min, max, fmt = axis
   return y;
 }
 
-function chartBlock(container, title, marginTop) {
-  const t = el('div', 'chart-title');
-  t.textContent = title;
-  if (marginTop) t.style.marginTop = marginTop;
-  container.appendChild(t);
-  const wrap = el('div', 'chart-wrap');
+// X labels are thinned by available width, not by a fixed count — the same
+// chart is rendered full-width and in a half-width card.
+function labelStep(count, usableWidth, minPx) {
+  const fits = Math.max(1, Math.floor(usableWidth / minPx));
+  return Math.max(1, Math.ceil(count / fits));
+}
+
+// One card = one widget. Everything the page renders is a card in .stats-grid,
+// so the layout stays even no matter how many widgets are on screen; `wide`
+// makes a card span the full row (charts that need the horizontal room).
+function card(title, cls) {
+  const box = el('section', 'card' + (cls ? ' ' + cls : ''));
+  const h = el('h3', 'card-title');
+  h.textContent = title;
+  box.appendChild(h);
+  return box;
+}
+
+function chartCard(title, cls) {
+  const box = card(title, cls);
   const canvas = document.createElement('canvas');
-  wrap.appendChild(canvas);
-  container.appendChild(wrap);
-  return canvas;
+  box.appendChild(canvas);
+  return { box, canvas };
 }
 
 // ---------- equity curve (with the deepest drawdown marked) ----------
@@ -135,7 +148,7 @@ function drawEquity(canvas, points, dates) {
 
   // X axis: date labels (horizontal), thinned out when crowded
   ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
-  const step = Math.max(1, Math.ceil(points.length / 8));
+  const step = labelStep(points.length, W - padL - padR, 52);
   for (let i = 0; i < points.length; i++) {
     if (i % step !== 0 && i !== points.length - 1) continue;
     ctx.fillText(ddmm(dates[i] || ''), x(i), H - padBot + 8);
@@ -183,7 +196,7 @@ function drawBars(canvas, groups) {
 
     // X axis: date labels (thinned when crowded)
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
-    const step = Math.max(1, Math.ceil(groups.length / 12));
+    const step = labelStep(groups.length, W - padL - padR, 52);
     groups.forEach((g, i) => {
       if (i % step !== 0 && i !== groups.length - 1) return;
       ctx.fillText(g.label, cx(i), H - padBot + 8);
@@ -212,7 +225,7 @@ function drawBars(canvas, groups) {
 // ---------- histogram: distribution of trade results ----------
 
 function drawHistogram(canvas, bins) {
-  const H = 240, padL = 56, padR = 16, padTop = 18, padBot = 34;
+  const H = 260, padL = 56, padR = 16, padTop = 18, padBot = 34;
   const pos = CSS('--pos') || '#46c46a';
   const neg = CSS('--neg') || '#f26d78';
   const muted = CSS('--muted') || '#8b95a6';
@@ -239,7 +252,7 @@ function drawHistogram(canvas, bins) {
 
     // X labels at the bin edges, thinned when crowded
     ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
-    const step = Math.max(1, Math.ceil(bins.length / 6));
+    const step = labelStep(bins.length, W - padL - padR, 56);
     bins.forEach((b, i) => {
       if (i % step !== 0) return;
       ctx.fillText(axisRub(b.from), padL + slot * i, H - padBot + 8);
@@ -324,9 +337,7 @@ function calendarWidget(map) {
 function breakdownPanel(title, groups, opts = {}) {
   const F = window.format;
   const rows = opts.keepEmpty ? groups : groups.filter((g) => g.count > 0);
-  const panel = el('div', 'panel');
-  const h = el('h3'); h.textContent = title;
-  panel.append(h);
+  const panel = card(title);
   if (!rows.length) {
     const e = el('div', 'panel-empty'); e.textContent = 'нет данных';
     panel.append(e);
@@ -354,9 +365,7 @@ function breakdownPanel(title, groups, opts = {}) {
 
 function monthlyTable(rows) {
   const F = window.format;
-  const panel = el('div', 'panel wide');
-  const h = el('h3'); h.textContent = 'Итоги по месяцам';
-  panel.append(h);
+  const panel = card('Итоги по месяцам', 'wide');
   const table = el('table', 'mini-table');
   const thead = el('thead');
   const htr = el('tr');
@@ -413,6 +422,7 @@ function periodBar(onChange) {
 // ---------- main render ----------
 
 function renderStats(container, trades) {
+  lastRender = { container, trades };
   const F = window.format;
   const an = A();
   container.innerHTML = '';
@@ -469,27 +479,31 @@ function renderStats(container, trades) {
     return;
   }
 
-  // equity curve + drawdown
-  const dates = closed.map((t) => t.closeDate);
-  const eq = chartBlock(container, 'Кривая капитала — накопительный профит, ₽');
-  requestAnimationFrame(() => drawEquity(eq, cumulative, dates));
+  const grid = el('div', 'stats-grid');
+  container.appendChild(grid);
+  const draw = (fn) => requestAnimationFrame(fn);
 
-  // profit by day — vertical bars
+  // equity curve — full width, it reads by shape rather than by value
+  const dates = closed.map((t) => t.closeDate);
+  const eq = chartCard('Кривая капитала — накопительный профит, ₽', 'wide');
+  grid.appendChild(eq.box);
+  draw(() => drawEquity(eq.canvas, cumulative, dates));
+
+  // profit by day + distribution share a row
   const byDay = an.groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.key < b.key ? -1 : 1));
   byDay.forEach((g) => (g.label = ddmm(g.key)));
-  const dayCanvas = chartBlock(container, 'Профит по дням, ₽', '22px');
-  requestAnimationFrame(() => drawBars(dayCanvas, byDay));
+  const day = chartCard('Профит по дням, ₽');
+  grid.appendChild(day.box);
+  draw(() => drawBars(day.canvas, byDay));
 
-  // calendar heatmap
-  const calTitle = el('div', 'chart-title');
-  calTitle.textContent = 'Календарь — профит по дням закрытия';
-  calTitle.style.marginTop = '22px';
-  container.appendChild(calTitle);
-  container.appendChild(calendarWidget(an.calendarMap(closed)));
+  const hist = chartCard('Распределение результатов — сделок в диапазоне');
+  grid.appendChild(hist.box);
+  draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, Math.min(10, Math.max(4, closed.length)))));
 
-  // distribution of results
-  const hist = chartBlock(container, 'Распределение результатов — сколько сделок в каждом диапазоне', '22px');
-  requestAnimationFrame(() => drawHistogram(hist, an.profitHistogram(profits, Math.min(10, Math.max(4, closed.length)))));
+  // calendar — full width, it already tiles its own months
+  const cal = card('Календарь — профит по дням закрытия', 'wide');
+  cal.appendChild(calendarWidget(an.calendarMap(closed)));
+  grid.appendChild(cal);
 
   // breakdowns
   const moexLeg = (t) => t.legs.find((l) => l.exchange === 'MOEX') || t.legs[0];
@@ -500,8 +514,7 @@ function renderStats(container, trades) {
   const byDirOther = an.groupBy(closed, (t) => `${otherLeg(t).exchange} ${otherLeg(t).side}`).sort(byProfit);
   const byTag = an.groupBy(closed, (t) => t.tag || '—').sort(byProfit);
 
-  const panels = el('div', 'panels');
-  panels.append(
+  grid.append(
     breakdownPanel('Профит по спреду входа', an.spreadBuckets(closed)),
     breakdownPanel('Профит по времени удержания', an.holdingBuckets(closed)),
     breakdownPanel('Профит по объёму позиции', an.capitalBuckets(closed)),
@@ -510,11 +523,19 @@ function renderStats(container, trades) {
     breakdownPanel('Профит по тегу', byTag),
     breakdownPanel('Профит по направлению (нога MOEX)', byDirMoex),
     breakdownPanel('Профит по направлению (2-я нога)', byDirOther),
+    monthlyTable(an.byMonth(closed)),
   );
-  container.appendChild(panels);
-
-  container.appendChild(monthlyTable(an.byMonth(closed)));
 }
+
+// Canvases are sized from their card's width, so a window resize has to redraw
+// them; re-rendering the whole view is cheap (everything is already in memory).
+let lastRender = null;
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  if (!lastRender || !document.querySelector('.stats-grid')) return;
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => renderStats(lastRender.container, lastRender.trades), 120);
+});
 
 window.stats = { renderStats };
 })();

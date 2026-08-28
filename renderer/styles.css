@@ -301,7 +301,7 @@ header {
 }
 .detail-leg {
   display: grid;
-  grid-template-columns: 100px 62px 200px 88px 128px 1fr;
+  grid-template-columns: 96px 58px 186px 82px 208px 124px 1fr;
   gap: 10px; align-items: center;
   padding: 7px 0;
   font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px;
@@ -312,6 +312,7 @@ header {
 .detail-leg .side.pos { color: var(--pos); }
 .detail-leg .side.neg { color: var(--neg); }
 .detail-leg .units, .detail-leg .fee { color: var(--muted); }
+.detail-leg .pos { color: var(--muted); }   /* position value, entry -> exit */
 .detail-leg .pnl { text-align: right; font-weight: 600; }
 .detail-leg .pnl.pos { color: var(--pos); }
 .detail-leg .pnl.neg { color: var(--neg); }

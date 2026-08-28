@@ -121,9 +121,22 @@ async function openForm(trade, onSaved) {
     const c = window.calc.computeTrade(draft());
     const closed = window.calc.isClosed(draft());
     live.innerHTML = '';
+    // position value of both legs together: what the trade ties up, and what it
+    // is worth once the exits are filled in
+    const posSum = (field) => {
+      let sum = 0;
+      for (const lc of c.legs) {
+        if (lc[field] === null || lc[field] === undefined) return null;
+        sum += lc[field];
+      }
+      return sum;
+    };
+    const usd0 = (n) => (n === null ? '—' : '$' + Math.round(n).toLocaleString('ru-RU'));
     live.append(
       item('Вход спред', F.fmtPct(c.entrySpread) || '—'),
+      item('Спред выход', F.fmtPct(c.exitSpread) || '—'),
       item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
+      item('Позиция', `${usd0(posSum('start'))} → ${usd0(posSum('end'))}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
       item('Чистый профит', F.fmtRub(c.netProfitRub) || '—', sc(c.netProfitRub)),
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),

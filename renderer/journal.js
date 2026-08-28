@@ -32,6 +32,8 @@ const price = (n) => (n === null || n === undefined || n === '' ? '—'
 const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
   : (n * 100).toFixed(2).replace('.', ',') + '%');
 const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+const usd0 = (n) => (n === null || n === undefined ? '—'
+  : '$' + Math.round(n).toLocaleString('ru-RU'));
 
 // view state survives re-renders (adding a trade shouldn't reset the filters)
 const state = {
@@ -49,7 +51,7 @@ const COLUMNS = [
   { key: 'ticker', label: 'Тикер', sortable: true },
   { label: 'Тег' },
   { label: 'Ноги' },
-  { key: 'spread', label: 'Спред вход → итог', sortable: true, right: true },
+  { key: 'spread', label: 'Спред вход → выход', sortable: true, right: true },
   { key: 'profit', label: 'Чистый', sortable: true, right: true },
   { label: '' },
 ];
@@ -188,6 +190,16 @@ function tradeRow(trade, c) {
   return row;
 }
 
+// both legs together: what the trade tied up at entry and was worth at exit
+function posTotal(c, field) {
+  let sum = 0;
+  for (const lc of c.legs) {
+    if (lc[field] === null || lc[field] === undefined) return null;
+    sum += lc[field];
+  }
+  return sum;
+}
+
 // the numbers that don't fit the row, shown when a trade is expanded
 function tradeDetail(trade, c) {
   const F = window.format;
@@ -201,6 +213,7 @@ function tradeDetail(trade, c) {
     line.append(el('span', 'side ' + (leg.side === 'Шорт' ? 'neg' : 'pos'), leg.side || '—'));
     line.append(el('span', 'prices', `${price(leg.entryPrice)} → ${price(leg.exitPrice)}`));
     line.append(el('span', 'units', F.fmtNum(leg.units) + ' шт'));
+    line.append(el('span', 'pos', `${usd0(lc.start)} → ${usd0(lc.end)}`));
     line.append(el('span', 'fee', 'комса ' + rub0(Number(leg.feeRub) || 0)));
     line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—' : F.fmtUsd(lc.gross)));
     legs.append(line);
@@ -214,6 +227,9 @@ function tradeDetail(trade, c) {
     return i;
   };
   meta.append(
+    item('Спред выход', pct2(c.exitSpread)),
+    item('Спред итог', pct2(c.spreadTotal), signCls(c.spreadTotal)),
+    item('Позиция', `${usd0(posTotal(c, 'start'))} → ${usd0(posTotal(c, 'end'))}`),
     item('Курс', String(trade.usdRub || '—')),
     item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),
     item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),

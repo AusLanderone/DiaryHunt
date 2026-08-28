@@ -133,6 +133,10 @@ try {
   check('expanded detail shows both legs with prices, size and fees',
     /MOEX/.test(detail) && /FOREX/.test(detail) && /комса/.test(detail)
     && /шт/.test(detail) && /→/.test(detail), detail);
+  check('expanded detail carries exit spread, total spread and position value',
+    /Спред выход/i.test(detail) && /Спред итог/i.test(detail)
+    && /Позиция/i.test(detail) && /\$[\d\s]+ → \$[\d\s]+/.test(detail), detail);
+  await page.screenshot({ path: path.join(SHOT, '02b-journal-expanded.png') });
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
 
   // filters actually filter
@@ -296,6 +300,9 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
+  check('form live panel shows exit spread and position value',
+    /спред выход/i.test(res.manualLive) && /Позиция/i.test(res.manualLive)
+    && /\$[\d\s]+ → \$[\d\s]+/.test(res.manualLive), res.manualLive);
 
   console.log('\n[5] USD/RUB fetch button');
   const rateUi = await page.evaluate(() => {

@@ -187,7 +187,7 @@ try {
     /MOEX/.test(detail) && /FOREX/.test(detail) && /→/.test(detail), detail);
   // the labels render uppercase via CSS, and innerText returns them transformed
   check('every column in the expanded trade is labelled',
-    ['Биржа', 'Сделка', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'Своп', 'PnL ноги']
+    ['Биржа', 'Сделка', 'Роль', 'Цена вход', 'Кол-во', 'Позиция начало', 'Комиссия', 'Своп', 'PnL ноги']
       .every((l) => detail.toLowerCase().includes(l.toLowerCase())), detail);
   check('expanded detail lists payout and swap under their own labels',
     /payout/i.test(detail) && /своп/i.test(detail), detail);
@@ -428,7 +428,7 @@ try {
 
   check('form live panel shows exit spread and position value',
     /спред выход/i.test(res.manualLive) && /Позиция/i.test(res.manualLive)
-    && /\$[\d\s]+ → \$[\d\s]+/.test(res.manualLive), res.manualLive);
+    && /[\d\s]+ ₽ → [\d\s]+ ₽/.test(res.manualLive), res.manualLive);
 
   console.log('\n[5] USD/RUB fetch button');
   const rateUi = await page.evaluate(() => {
@@ -535,6 +535,68 @@ try {
     const t = ts.find((x) => x.ticker === 'IMPORTED');
     return t ? window.api.trades.remove(t.id) : null;
   }));
+
+  console.log('\n[8] a three-leg trade');
+  // synthetic USD/CNH from MOEX (SI ÷ CR) against the market cross
+  await page.evaluate(() => window.api.trades.add({
+    openDate: '2026-08-28', closeDate: '2026-08-28', type: 'Фьючи', ticker: 'TRI', tag: 'Тройник',
+    usdRub: 85, payout: 0, adjustment: 0, comment: 'triangle',
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85600, feeRub: 0, role: 'mul', priceCcy: 'RUB' },
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 11900, units: 1, exitPrice: 11880, feeRub: 0, role: 'div', priceCcy: 'RUB' },
+      { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.18, units: 1, exitPrice: 7.175, feeRub: 0, role: 'div', priceCcy: 'USD' },
+    ],
+  }));
+  await page.reload();
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
+  const tri = await page.evaluate(() => {
+    const find = () => [...document.querySelectorAll('.trade-row')].find((r) => /TRI/.test(r.innerText));
+    const row = find();
+    const rowText = row.innerText;
+    const legChips = row.querySelectorAll('.leg-chip').length;
+    row.click();
+    // clicking re-renders the journal, so re-query instead of holding the node
+    const detail = document.querySelector('.trade-detail');
+    return {
+      row: rowText.replace(/\n/g, ' | '),
+      detail: detail ? detail.innerText.replace(/\n/g, ' | ') : 'NO DETAIL',
+      legChips,
+      legLines: detail ? detail.querySelectorAll('.detail-leg').length - 1 : 0,
+    };
+  });
+  check('a three-leg trade shows three leg chips', tri.legChips === 3, tri.row);
+  check('its entry spread is the multiplicative one (+0,07%)', /0,07%/.test(tri.row), tri.row);
+  check('the detail spells out the formula', /MOEX ÷ MOEX ÷ VANTAGE/.test(tri.detail), tri.detail);
+  check('the detail lists all three legs', tri.legLines === 3, `${tri.legLines} leg lines`);
+  check('rouble-quoted legs print in roubles and dollar ones in dollars',
+    norm(tri.detail).includes('85500₽') && /VANTAGE.*\$7,18/.test(norm(tri.detail).replace(/\|/g, ' ')), tri.detail);
+
+  const triCalc = await page.evaluate(() => window.api.trades.list().then((ts) => {
+    const t = ts.find((x) => x.ticker === 'TRI');
+    const c = window.calc.computeTrade(t);
+    return { entry: c.entrySpread, exit: c.exitSpread, net: c.netProfitRub, legs: t.legs.length };
+  }));
+  check('spread matches 85500 / (11900 × 7,18) − 1',
+    Math.abs(triCalc.entry - (85500 / (11900 * 7.18) - 1)) < 1e-9, String(triCalc.entry));
+  check('net profit sums the legs in their own currencies',
+    Math.abs(triCalc.net - (100 + 20 + 0.005 * 85)) < 0.01, String(triCalc.net));
+
+  // a three-leg trade must not break the journal's own machinery
+  const triJournal = await page.evaluate(() => ({
+    months: document.querySelectorAll('.month-head').length,
+    rows: document.querySelectorAll('.trade-row').length,
+    footer: document.querySelector('.journal-total .lbl').innerText,
+  }));
+  check('the journal still groups and totals with a three-leg trade in it',
+    triJournal.rows >= 3 && /сделок/i.test(triJournal.footer), JSON.stringify(triJournal));
+
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(400);
+  const triStats = await page.evaluate(() => document.querySelector('#view').innerText);
+  check('stats survive a three-leg trade', /закрытых сделок/i.test(triStats)
+    && /не-moex/i.test(triStats), triStats.slice(0, 120));
+  await page.evaluate(() => document.querySelector('#tab-journal').click());
+
 
 } catch (err) {
   failures++;

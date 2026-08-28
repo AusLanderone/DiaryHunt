@@ -318,7 +318,7 @@ header {
 }
 .detail-leg {
   display: grid;
-  grid-template-columns: 92px 56px 178px 74px 196px 104px 104px 1fr;
+  grid-template-columns: 88px 54px 30px 168px 68px 186px 96px 96px 1fr;
   gap: 10px; align-items: center;
   padding: 7px 0;
   font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px;
@@ -336,6 +336,11 @@ header {
 .detail-leg .side.pos { color: var(--pos); }
 .detail-leg .side.neg { color: var(--neg); }
 .detail-leg .units, .detail-leg .fee { color: var(--muted); }
+.detail-leg .role { color: var(--accent); font-weight: 700; text-align: center; }
+.detail-formula {
+  margin: 0 0 8px;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+}
 .detail-leg .swap { color: var(--muted); }
 .detail-leg .swap.pos { color: var(--pos); }
 .detail-leg .swap.neg { color: var(--neg); }

@@ -506,12 +506,17 @@ function renderStats(container, trades) {
   grid.appendChild(cal);
 
   // breakdowns
-  const moexLeg = (t) => t.legs.find((l) => l.exchange === 'MOEX') || t.legs[0];
-  const otherLeg = (t) => t.legs.find((l) => l !== moexLeg(t)) || t.legs[1] || t.legs[0];
+  const moexLeg = (t) => t.legs.find((l) => window.calc.isRubLeg(l)) || t.legs[0];
+  // every leg that isn't the MOEX one — a trade can have more than two
+  const otherLegs = (t) => {
+    const rest = t.legs.filter((l) => l !== moexLeg(t));
+    return rest.length ? rest : [t.legs[0]];
+  };
   const byProfit = (a, b) => b.profit - a.profit;
   const byTicker = an.groupBy(closed, (t) => t.ticker).sort(byProfit);
   const byDirMoex = an.groupBy(closed, (t) => `${moexLeg(t).exchange} ${moexLeg(t).side}`).sort(byProfit);
-  const byDirOther = an.groupBy(closed, (t) => `${otherLeg(t).exchange} ${otherLeg(t).side}`).sort(byProfit);
+  const byDirOther = an.groupBy(closed,
+    (t) => otherLegs(t).map((l) => `${l.exchange} ${l.side}`).join(' · ')).sort(byProfit);
   const byTag = an.groupBy(closed, (t) => t.tag || '—').sort(byProfit);
 
   grid.append(
@@ -522,7 +527,7 @@ function renderStats(container, trades) {
     breakdownPanel('Профит по тикеру', byTicker),
     breakdownPanel('Профит по тегу', byTag),
     breakdownPanel('Профит по направлению (нога MOEX)', byDirMoex),
-    breakdownPanel('Профит по направлению (2-я нога)', byDirOther),
+    breakdownPanel('Профит по направлению (не-MOEX ноги)', byDirOther),
     monthlyTable(an.byMonth(closed)),
   );
 }

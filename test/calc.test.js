@@ -272,3 +272,14 @@ test('exitSpread — an unfinished leg leaves the exit spread unknown', () => {
 test('spreadFormula — reads back as the trade was entered', () => {
   assert.strictEqual(calc.spreadFormula(triangle), 'MOEX ÷ MOEX ÷ VANTAGE');
 });
+
+test('computeTrade — leg figures come with their rouble equivalents', () => {
+  const c = calc.computeTrade(triangle);
+  near(c.legs[0].start, 85500);          // as quoted, in the leg's currency
+  near(c.legs[0].startRub, 85500);       // rouble leg: unchanged
+  near(c.legs[2].start, 7.18);
+  near(c.legs[2].startRub, 7.18 * 85);   // dollar leg: converted
+  near(c.legs[0].grossRub, -100);   // long 85500 -> 85400
+  near(c.positionStartRub, 85500 + 11900 + 7.18 * 85);
+  near(c.positionEndRub, 85400 + 11880 + 7.175 * 85);
+});

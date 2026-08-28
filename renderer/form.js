@@ -187,22 +187,14 @@ async function openForm(trade, onSaved) {
     const c = window.calc.computeTrade(draft());
     const closed = window.calc.isClosed(draft());
     live.innerHTML = '';
-    // position value of both legs together: what the trade ties up, and what it
-    // is worth once the exits are filled in
-    const posSum = (field) => {
-      let sum = 0;
-      for (const lc of c.legs) {
-        if (lc[field] === null || lc[field] === undefined) return null;
-        sum += lc[field];
-      }
-      return sum;
-    };
-    const usd0 = (n) => (n === null ? '—' : '$' + Math.round(n).toLocaleString('ru-RU'));
+    // legs can be quoted in different currencies, so the position total is roubles
+    const rub0 = (n) => (n === null || n === undefined ? '—'
+      : Math.round(n).toLocaleString('ru-RU') + ' ₽');
     live.append(
       item('Вход спред', F.fmtPct(c.entrySpread) || '—'),
       item('Спред выход', F.fmtPct(c.exitSpread) || '—'),
       item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
-      item('Позиция', `${usd0(posSum('start'))} → ${usd0(posSum('end'))}`),
+      item('Позиция', `${rub0(c.positionStartRub)} → ${rub0(c.positionEndRub)}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
       item('Своп', F.fmtRub(c.swapTotalRub), sc(c.swapTotalRub)),
       item('Чистый профит', F.fmtRub(c.netProfitRub) || '—', sc(c.netProfitRub)),

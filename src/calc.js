@@ -179,12 +179,21 @@ function estimatePayout(trade, rate) {
 
 function computeTrade(trade) {
   return {
-    legs: trade.legs.map((leg) => ({
-      start: legPositionStart(leg),
-      end: legPositionEnd(leg),
-      gross: legGross(leg),
-      swapRub: legSwapRub(leg, trade.usdRub),
-    })),
+    legs: trade.legs.map((leg, i) => {
+      const start = legPositionStart(leg);
+      const end = legPositionEnd(leg);
+      const k = legPriceMul(leg, trade.usdRub);
+      return {
+        start, end, gross: legGross(leg),
+        // same figures in roubles, so a mixed-currency trade can be summed
+        startRub: start * k,
+        endRub: end === null ? null : end * k,
+        grossRub: legGrossRub(leg, trade.usdRub),
+        swapRub: legSwapRub(leg, trade.usdRub),
+        priceCcy: legPriceCcy(leg),
+        role: legRole(leg, i),
+      };
+    }),
     entrySpread: entrySpread(trade),
     exitSpread: exitSpread(trade),
     spreadTotal: spreadTotal(trade),
@@ -195,6 +204,9 @@ function computeTrade(trade) {
     pnlNetPct: pnlNetPct(trade),
     netProfitRub: netProfitRub(trade),
     swapTotalRub: swapTotalRub(trade),
+    positionStartRub: positionStartRub(trade),
+    positionEndRub: positionEndRub(trade),
+    spreadFormula: spreadFormula(trade),
     closed: isClosed(trade),
   };
 }

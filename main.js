@@ -41,7 +41,7 @@ async function request(url, body) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' },
       body,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw new Error(cloudLink.explainHttp(res.status));
     return await res.text();
   } finally {
     clearTimeout(timer);
@@ -195,7 +195,7 @@ function registerIpc() {
       const timer = setTimeout(() => ctrl.abort(), 8000);
       try {
         const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'DiaryHunt' } });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) throw new Error(cloudLink.explainHttp(res.status));
         return await res.text();
       } finally {
         clearTimeout(timer);

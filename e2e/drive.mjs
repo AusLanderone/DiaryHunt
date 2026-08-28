@@ -567,6 +567,80 @@ try {
     [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent)).click();
   });
 
+  console.log('\n[7c] an open trade values itself at current prices');
+  await page.evaluate(() => {
+    const cancel = [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent));
+    if (cancel) cancel.click();
+  });
+  await page.evaluate(() => window.api.trades.add({
+    openDate: '2026-08-27', closeDate: '', type: 'Фьючи', ticker: 'OPENX', tag: 'Схождение',
+    usdRub: 85, payout: 0, adjustment: 0, comment: '',
+    legs: [
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 69.28, units: 1060, exitPrice: null, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 68.9955, units: 1000, exitPrice: null, feeRub: 0 },
+    ],
+  }));
+  await page.reload();
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
+
+  const openRow = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.trade-row')].find((r) => /OPENX/.test(r.innerText));
+    const text = row.innerText.replace(/\n/g, ' | ');
+    row.click();
+    return { text, mark: !!document.querySelector('.mark-block') };
+  });
+  check('an open trade without marks still reads as открыта', /ОТКРЫТА/i.test(openRow.text), openRow.text);
+  check('its expanded view offers current prices', openRow.mark, String(openRow.mark));
+
+  const valued = await page.evaluate(() => {
+    const inputs = [...document.querySelectorAll('.mark-input')];
+    const set = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const before = document.querySelector('.mark-out').innerText.replace(/\n/g, ' ');
+    set(inputs[0], 68.9);
+    const half = document.querySelector('.mark-out').innerText.replace(/\n/g, ' ');
+    set(inputs[1], 68.7);
+    return { before, half, full: document.querySelector('.mark-out').innerText.replace(/\n/g, ' | ') };
+  });
+  check('one price alone is not enough to value the trade',
+    /заполните/i.test(valued.before) && /заполните/i.test(valued.half), valued.half);
+  check('with both prices it reports spread now, PnL and the result if closed',
+    /спред сейчас/i.test(valued.full) && /если закрыть/i.test(valued.full)
+    && /₽/.test(valued.full), valued.full);
+
+  // (69.28 - 68.90) * 1060 = +402.80 $, (68.70 - 68.9955) * 1000 = -295.50 $ -> +107.30 $ -> 9 120.50 ₽
+  const math = await page.evaluate(async () => {
+    const list = await window.api.trades.list();
+    const t = list.find((x) => x.ticker === 'OPENX');
+    const marked = { ...t, legs: [{ ...t.legs[0], markPrice: 68.9 }, { ...t.legs[1], markPrice: 68.7 }] };
+    const u = window.calc.unrealized(marked);
+    return { net: u.netProfitRub, spread: u.exitSpread };
+  });
+  check('the estimate matches the arithmetic (+9 120,50 ₽)',
+    Math.abs(math.net - 9120.5) < 1, String(math.net));
+
+  const remembered = await page.evaluate(async () => {
+    [...document.querySelectorAll('.mark-save')][0].click();
+    await new Promise((r) => setTimeout(r, 500));
+    const list = await window.api.trades.list();
+    const t = list.find((x) => x.ticker === 'OPENX');
+    const row = [...document.querySelectorAll('.trade-row')].find((r) => /OPENX/.test(r.innerText));
+    return { stored: t.legs.map((l) => l.markPrice), markedAt: t.markedAt, row: row.innerText.replace(/\n/g, ' | ') };
+  });
+  check('remembering the prices stores them on the trade',
+    remembered.stored[0] === 68.9 && remembered.stored[1] === 68.7 && !!remembered.markedAt,
+    JSON.stringify(remembered.stored));
+  check('the row then shows the estimate instead of just «открыта»',
+    /≈/.test(remembered.row) && norm(remembered.row).includes('120,50'), remembered.row);
+  check('the row also shows the spread now', !/→ —/.test(remembered.row), remembered.row);
+
+  await page.evaluate(async () => {
+    const list = await window.api.trades.list();
+    const t = list.find((x) => x.ticker === 'OPENX');
+    if (t) await window.api.trades.remove(t.id);
+  });
+  await page.reload();
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
+
   console.log('\n[8] a three-leg trade');
   // synthetic USD/CNH from MOEX (SI ÷ CR) against the market cross
   await page.evaluate(() => window.api.trades.add({

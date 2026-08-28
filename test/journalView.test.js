@@ -163,3 +163,33 @@ test('summarize — an all-open list reports no winrate instead of dividing by z
   assert.strictEqual(s.winrate, null);
   assert.strictEqual(s.total, 0);
 });
+
+test('nextSort — first click on a column sorts it descending', () => {
+  assert.deepStrictEqual(jv.nextSort({ key: null, dir: 'desc' }, 'profit'), { key: 'profit', dir: 'desc' });
+});
+
+test('nextSort — ticker starts ascending, alphabetical order reads better', () => {
+  assert.deepStrictEqual(jv.nextSort({ key: null, dir: 'desc' }, 'ticker'), { key: 'ticker', dir: 'asc' });
+});
+
+test('nextSort — second click flips the direction', () => {
+  assert.deepStrictEqual(jv.nextSort({ key: 'profit', dir: 'desc' }, 'profit'), { key: 'profit', dir: 'asc' });
+  assert.deepStrictEqual(jv.nextSort({ key: 'ticker', dir: 'asc' }, 'ticker'), { key: 'ticker', dir: 'desc' });
+});
+
+test('nextSort — third click clears the sort back to the default order', () => {
+  const after2 = jv.nextSort({ key: 'profit', dir: 'desc' }, 'profit');
+  assert.deepStrictEqual(jv.nextSort(after2, 'profit'), { key: null, dir: 'desc' });
+  // whichever column was sorted, clearing restores newest-first, not its reverse
+  const t2 = jv.nextSort({ key: 'ticker', dir: 'asc' }, 'ticker');
+  assert.deepStrictEqual(jv.nextSort(t2, 'ticker'), { key: null, dir: 'desc' });
+});
+
+test('nextSort — clicking another column starts that column fresh', () => {
+  assert.deepStrictEqual(jv.nextSort({ key: 'profit', dir: 'asc' }, 'date'), { key: 'date', dir: 'desc' });
+});
+
+test('sortTrades — a cleared sort falls back to newest trade first', () => {
+  const list = [trade({ num: 2 }), trade({ num: 5 }), trade({ num: 1 })];
+  assert.deepStrictEqual(nums(jv.sortTrades(list, null, 'desc')), [5, 2, 1]);
+});

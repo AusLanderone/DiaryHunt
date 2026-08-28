@@ -38,7 +38,7 @@ const usd0 = (n) => (n === null || n === undefined ? '—'
 // view state survives re-renders (adding a trade shouldn't reset the filters)
 const state = {
   query: '', status: 'all', tag: 'all', period: 'all',
-  sortKey: 'num', sortDir: 'desc',
+  sortKey: null, sortDir: 'desc',   // null = default order (newest trade first)
   expanded: new Set(),
 };
 let ctx = null;   // { container, trades, onEdit, onDelete }
@@ -107,9 +107,13 @@ function header() {
         cell.classList.add('active');
         cell.append(el('span', 'arrow', state.sortDir === 'asc' ? '▲' : '▼'));
       }
+      cell.title = state.sortKey === col.key
+        ? 'Ещё клик — сбросить сортировку'
+        : 'Клик — сортировать, третий клик — сбросить';
       cell.onclick = () => {
-        if (state.sortKey === col.key) state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
-        else { state.sortKey = col.key; state.sortDir = col.key === 'ticker' ? 'asc' : 'desc'; }
+        const next = V().nextSort({ key: state.sortKey, dir: state.sortDir }, col.key);
+        state.sortKey = next.key;
+        state.sortDir = next.dir;
         rerender();
       };
     }

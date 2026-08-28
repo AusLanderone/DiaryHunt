@@ -67,6 +67,17 @@ function sortTrades(trades, key = 'num', dir = 'desc') {
   });
 }
 
+// Клик по заголовку: сначала колонка в её естественном порядке, потом обратный,
+// третий клик снимает сортировку и возвращает журнал к порядку по умолчанию.
+const DEFAULT_DIR = (key) => (key === 'ticker' ? 'asc' : 'desc');
+
+function nextSort(current, key) {
+  const def = DEFAULT_DIR(key);
+  if (current.key !== key) return { key, dir: def };
+  if (current.dir === def) return { key, dir: def === 'asc' ? 'desc' : 'asc' };
+  return { key: null, dir: 'desc' };   // back to the default: newest trade first
+}
+
 // ---------- grouping ----------
 
 // [{ key: '2026-08', label: 'август 2026', trades, count, openCount, profit }]
@@ -109,7 +120,7 @@ function summarize(trades) {
   };
 }
 
-const _api = { filterTrades, sortTrades, groupByMonth, summarize, MONTHS };
+const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, MONTHS };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.journalView = _api;
 })();

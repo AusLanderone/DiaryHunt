@@ -830,3 +830,37 @@ canvas { display: block; width: 100%; }
 .snap-field input:focus { outline: none; border-color: var(--accent); }
 .snap-editor .acc-row input, .snap-editor .acc-row select { background: var(--surface); }
 .snap-buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+
+/* ---------- cloud sync: header badge and settings block ---------- */
+.sync-badge {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 7px 13px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  font: inherit; font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.sync-badge:hover { color: var(--text); border-color: var(--muted-2); }
+.sync-badge .dot {
+  flex: none; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--muted-2);
+}
+.sync-badge.ok .dot { background: var(--pos); box-shadow: 0 0 8px var(--pos); }
+.sync-badge.busy .dot { background: var(--open); animation: sync-pulse 1s ease-in-out infinite; }
+.sync-badge.err .dot { background: var(--neg); box-shadow: 0 0 8px var(--neg); }
+.sync-badge.err { color: var(--neg); border-color: color-mix(in srgb, var(--neg) 40%, var(--line)); }
+@keyframes sync-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+
+.sync-path {
+  margin: 4px 0 8px;
+  padding: 8px 11px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font-family: var(--mono); font-size: 12px; color: var(--muted);
+  word-break: break-all;
+}
+.sync-info { margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }

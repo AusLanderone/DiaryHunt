@@ -149,6 +149,28 @@ try {
   check('journal never scrolls sideways', journal.overflow <= 0, `overflow ${journal.overflow}px`);
   check('footer summarises the visible trades', /сделок/i.test(journal.footer) && /винрейт/i.test(journal.footer), journal.footer);
 
+  // sorting cycles: default order -> reversed -> cleared
+  const sortCycle = await page.evaluate(() => {
+    const head = () => [...document.querySelectorAll('.journal-head .sortable')]
+      .find((h) => /тикер/i.test(h.textContent));
+    const tickers = () => [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
+    const active = () => document.querySelectorAll('.journal-head .active').length;
+    const before = tickers();
+    head().click();
+    const asc = tickers(), activeAfter1 = active();
+    head().click();
+    const desc = tickers();
+    head().click();
+    return { before, asc, desc, cleared: tickers(), activeAfter1, activeAfterReset: active() };
+  });
+  check('first click sorts the column', sortCycle.asc.join() !== sortCycle.desc.join()
+    && sortCycle.activeAfter1 === 1, JSON.stringify(sortCycle));
+  check('second click reverses it',
+    sortCycle.asc.join() === [...sortCycle.desc].reverse().join(), JSON.stringify(sortCycle));
+  check('third click clears the sort and drops the header highlight',
+    sortCycle.cleared.join() === sortCycle.before.join() && sortCycle.activeAfterReset === 0,
+    JSON.stringify(sortCycle));
+
   // expanding a trade reveals the per-leg numbers
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
   await page.waitForSelector('.trade-detail', { timeout: 5000 });

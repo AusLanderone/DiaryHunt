@@ -225,3 +225,50 @@ test('all-dollar trades keep their verified numbers', () => {
   near(calc.netProfitRub(trade1), 1044.40, 0.05);
   near(calc.netProfitRub(trade3), 3923.97, 0.5);
 });
+
+
+// ---- multiplicative spread over any number of legs ----
+
+// The user's triangle: synthetic USD/CNH from MOEX against the market cross.
+const triangle = {
+  usdRub: 85, payout: 0, adjustment: 0, closeDate: '2026-08-28',
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 85500, units: 1, exitPrice: 85400, feeRub: 0, role: 'mul', priceCcy: 'RUB' },
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 11900, units: 1, exitPrice: 11880, feeRub: 0, role: 'div', priceCcy: 'RUB' },
+    { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 7.180, units: 1, exitPrice: 7.175, feeRub: 0, role: 'div', priceCcy: 'USD' },
+  ],
+};
+
+test('legRole — first leg divides, the rest multiply, explicit wins', () => {
+  assert.strictEqual(calc.legRole({}, 0), 'div');
+  assert.strictEqual(calc.legRole({}, 1), 'mul');
+  assert.strictEqual(calc.legRole({ role: 'mul' }, 0), 'mul');
+  assert.strictEqual(calc.legRole({ role: 'div' }, 1), 'div');
+});
+
+test('entrySpread — two legs keep the verified numbers', () => {
+  near(calc.entrySpread(trade1), 0.001903, 1e-5);
+  near(calc.exitSpread(trade1), 0.001484, 1e-5);
+  near(calc.spreadTotal(trade1), 0.000419, 1e-5);
+  assert.ok(calc.entrySpread(trade3) < 0, 'trade #3 entry spread stays negative');
+});
+
+test('entrySpread — the triangle divides the synthetic by the market cross', () => {
+  near(calc.entrySpread(triangle), 85500 / (11900 * 7.18) - 1, 1e-9);
+  near(calc.exitSpread(triangle), 85400 / (11880 * 7.175) - 1, 1e-9);
+});
+
+test('entrySpread — degenerate shapes yield null instead of Infinity', () => {
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: [triangle.legs[0]] }), null);
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: triangle.legs.map((l) => ({ ...l, role: 'mul' })) }), null);
+  assert.strictEqual(calc.entrySpread({ ...triangle, legs: [triangle.legs[0], { ...triangle.legs[1], entryPrice: 0 }] }), null);
+});
+
+test('exitSpread — an unfinished leg leaves the exit spread unknown', () => {
+  assert.strictEqual(calc.exitSpread({ ...triangle,
+    legs: [triangle.legs[0], triangle.legs[1], { ...triangle.legs[2], exitPrice: null }] }), null);
+});
+
+test('spreadFormula — reads back as the trade was entered', () => {
+  assert.strictEqual(calc.spreadFormula(triangle), 'MOEX ÷ MOEX ÷ VANTAGE');
+});

@@ -18,15 +18,39 @@ function legGross(leg) {
   return leg.side === 'Шорт' ? start - end : end - start; // Лонг/Спот: end - start
 }
 
-function entrySpread(trade) {
-  const [a, b] = trade.legs;
-  return (Number(b.entryPrice) - Number(a.entryPrice)) / Number(a.entryPrice);
+// A leg either multiplies or divides the spread expression. The defaults make a
+// two-leg trade read leg2 / leg1 - 1 — exactly the (b - a) / a of the
+// sheet-verified formula — so trades entered before this keep their numbers.
+function legRole(leg, index) {
+  return (leg.role === 'mul' || leg.role === 'div') ? leg.role : (index === 0 ? 'div' : 'mul');
 }
 
-function exitSpread(trade) {
-  const [a, b] = trade.legs;
-  if (!hasExit(a) || !hasExit(b)) return null;
-  return (Number(b.exitPrice) - Number(a.exitPrice)) / Number(a.exitPrice);
+// spread = Π(multiplying prices) / Π(dividing prices) - 1, over one price field
+function spreadOver(trade, field) {
+  if (!trade.legs || trade.legs.length < 2) return null;
+  let num = 1, den = 1, seenDen = false;
+  for (let i = 0; i < trade.legs.length; i++) {
+    const leg = trade.legs[i];
+    const raw = leg[field];
+    if (raw === null || raw === undefined || raw === '') return null;
+    const price = Number(raw);
+    if (Number.isNaN(price)) return null;
+    if (legRole(leg, i) === 'div') { den *= price; seenDen = true; } else { num *= price; }
+  }
+  if (!seenDen || den === 0) return null;
+  return num / den - 1;
+}
+
+const entrySpread = (trade) => spreadOver(trade, 'entryPrice');
+const exitSpread = (trade) => spreadOver(trade, 'exitPrice');
+
+// "MOEX ÷ MOEX ÷ VANTAGE" — what the spread divides by what
+function spreadFormula(trade) {
+  return trade.legs
+    .map((leg, i) => (i === 0
+      ? String(leg.exchange || '?')
+      : `${legRole(leg, i) === 'div' ? '÷' : '×'} ${leg.exchange || '?'}`))
+    .join(' ');
 }
 
 function spreadTotal(trade) {
@@ -177,7 +201,7 @@ function computeTrade(trade) {
 
 const _api = {
   legPositionStart, legPositionEnd, legGross,
-  entrySpread, exitSpread, spreadTotal,
+  entrySpread, exitSpread, spreadTotal, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,

@@ -62,8 +62,8 @@
     const done = el('button', { class: 'btn primary' }, [txt('Готово')]);
 
     // --- Данные: backup / restore ---
-    const expBtn = el('button', { class: 'btn ghost' }, [txt('Экспорт базы (.json)')]);
-    const impBtn = el('button', { class: 'btn ghost' }, [txt('Импорт базы')]);
+    const expBtn = el('button', { class: 'btn ghost' }, [txt('Экспорт всех данных (.json)')]);
+    const impBtn = el('button', { class: 'btn ghost' }, [txt('Импорт данных')]);
     const csvBtn = el('button', { class: 'btn ghost', id: 'btn-export-csv' }, [txt('Экспорт в CSV')]);
     csvBtn.onclick = async () => {
       const r = await window.api.exportCsv();
@@ -71,13 +71,13 @@
     };
     expBtn.onclick = async () => {
       const r = await window.api.db.export();
-      if (r.saved) alert(`Сохранено ${r.count} сделок:\n${r.path}`);
+      if (r.saved) alert(`Сохранено: ${r.summary}\n${r.path}`);
     };
     impBtn.onclick = async () => {
-      if (!confirm('Импорт заменит ВСЕ текущие сделки данными из файла. Текущая база будет сохранена в резервную копию. Продолжить?')) return;
+      if (!confirm('Импорт заменит текущие сделки, балансы и движения средств данными из файла. Прежние данные уйдут в резервную копию. Продолжить?')) return;
       const r = await window.api.db.import();
       if (r.imported) {
-        alert(`Импортировано сделок: ${r.count}`);
+        alert(`Восстановлено: ${r.summary}`);
         if (window.diary) window.diary.refresh();
         backdrop.remove();
       } else if (r.error) {
@@ -95,7 +95,7 @@
           field('Масштаб интерфейса', scaleSel),
         ]),
         el('div', { class: 'section-head' }, [txt('Данные')]),
-        el('p', { class: 'hint' }, [txt('Полный бэкап (сделки, справочники, настройки) в JSON и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
+        el('p', { class: 'hint' }, [txt('Полный бэкап в JSON: сделки, отметки баланса, движения средств, справочники и настройки — и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
         el('div', { class: 'data-row' }, [expBtn, impBtn, csvBtn]),
         el('div', { class: 'modal-buttons' }, [done]),
       ]),

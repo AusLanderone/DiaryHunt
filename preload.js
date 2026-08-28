@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld('api', {
     update: (id, patch) => ipcRenderer.invoke('balances:update', id, patch),
     remove: (id) => ipcRenderer.invoke('balances:remove', id),
   },
+  flows: {
+    list: () => ipcRenderer.invoke('flows:list'),
+    add: (input) => ipcRenderer.invoke('flows:add', input),
+    update: (id, patch) => ipcRenderer.invoke('flows:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('flows:remove', id),
+  },
   rates: {
     usdRub: () => ipcRenderer.invoke('rates:usdRub'),
   },

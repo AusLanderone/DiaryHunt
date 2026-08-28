@@ -48,12 +48,13 @@ const hideTip = () => { chartTip().style.display = 'none'; };
 
 // ₽ or $ — the toggle above the curve; survives re-renders
 const state = { unit: 'rub' };
-let ctx = null;   // { container, snapshots, trades }
+let ctx = null;   // { container, snapshots, trades, flows }
 
-const rerender = () => renderBalances(ctx.container, ctx.snapshots, ctx.trades);
+const rerender = () => renderBalances(ctx.container, ctx.snapshots, ctx.trades, ctx.flows);
 
 async function reload() {
   ctx.snapshots = await window.api.balances.list();
+  ctx.flows = await window.api.flows.list();
   rerender();
 }
 
@@ -214,9 +215,136 @@ function openSnapshotForm(existing) {
   document.body.append(backdrop);
 }
 
+// ---------- deposit / withdrawal form ----------
+
+function openFlowForm(existing) {
+  const today = new Date().toISOString().slice(0, 10);
+  const last = ctx.snapshots[ctx.snapshots.length - 1];
+  const base = existing || {
+    date: today, account: '', amount: '', ccy: 'RUB', kind: 'in',
+    usdRub: last ? last.usdRub : '', comment: '',
+  };
+
+  const date = el('input'); date.type = 'date'; date.value = base.date || today;
+  const kind = el('select');
+  [['in', 'Ввод средств'], ['out', 'Вывод средств']].forEach(([v, l]) => kind.append(new Option(l, v)));
+  kind.value = base.kind === 'out' ? 'out' : 'in';
+
+  // accounts already seen in snapshots, so the name doesn't get retyped
+  const known = [...new Set(ctx.snapshots.flatMap((s) => (s.accounts || []).map((a) => a.name)).filter(Boolean))].sort();
+  const list = el('datalist'); list.id = 'dh-acclist';
+  known.forEach((n) => list.append(new Option(n, n)));
+  const account = el('input');
+  account.type = 'text'; account.value = base.account || '';
+  account.setAttribute('list', 'dh-acclist');
+  account.placeholder = 'счёт ▾'; account.autocomplete = 'off';
+
+  const amount = el('input'); amount.type = 'number'; amount.step = 'any'; amount.value = base.amount ?? '';
+  const ccy = el('select');
+  [['RUB', '₽'], ['USD', '$']].forEach(([v, l]) => ccy.append(new Option(l, v)));
+  ccy.value = base.ccy === 'USD' ? 'USD' : 'RUB';
+  const rate = el('input'); rate.type = 'number'; rate.step = 'any'; rate.value = base.usdRub ?? '';
+  const rateBtn = el('button', 'btn mini', '↻ курс');
+  rateBtn.type = 'button';
+  const rateNote = el('span', 'field-note');
+  const comment = el('textarea'); comment.value = base.comment || '';
+
+  const preview = el('div', 'acc-total');
+  function recompute() {
+    const v = B().flowRub({
+      amount: Number(amount.value) || 0, ccy: ccy.value,
+      kind: kind.value, usdRub: Number(rate.value) || 0,
+    });
+    preview.innerHTML = '';
+    preview.append(
+      el('span', 'k', kind.value === 'out' ? 'Уйдёт со счетов' : 'Придёт на счета'),
+      el('span', 'v ' + sign(v), rub(v)),
+    );
+  }
+  [amount, rate, date].forEach((i) => i.addEventListener('input', recompute));
+  [ccy, kind].forEach((i) => i.addEventListener('change', recompute));
+  recompute();
+
+  rateBtn.onclick = async () => {
+    rateBtn.disabled = true;
+    rateNote.className = 'field-note';
+    rateNote.textContent = 'запрашиваю…';
+    try {
+      const r = await window.api.rates.usdRub();
+      if (!r.ok) {
+        rateNote.className = 'field-note err';
+        rateNote.textContent = r.error || 'не удалось получить курс';
+        return;
+      }
+      rate.value = r.rate;
+      recompute();
+      rateNote.textContent = `${r.source}${r.time ? ', ' + r.time : r.date ? ', ' + r.date : ''}`;
+    } finally {
+      rateBtn.disabled = false;
+    }
+  };
+
+  const field = (label, node) => {
+    const l = el('label');
+    l.append(document.createTextNode(label), node);
+    return l;
+  };
+  const rateField = el('label');
+  rateField.append(document.createTextNode('Курс USD/RUB'), el('div', 'field-row'), rateNote);
+  rateField.querySelector('.field-row').append(rate, rateBtn);
+  const amountField = el('label');
+  amountField.append(document.createTextNode('Сумма'), el('div', 'field-row'));
+  amountField.querySelector('.field-row').append(amount, ccy);
+
+  const save = el('button', 'btn primary', 'Сохранить');
+  const cancel = el('button', 'btn ghost', 'Отмена');
+  const modal = el('div', 'modal');
+  modal.append(
+    el('h2', null, existing ? 'Движение средств' : 'Ввод или вывод средств'),
+    el('p', 'hint', 'Перевод денег на счёт или с него. Движения не считаются прибылью — они поднимают или опускают линию журнала, чтобы её можно было сравнивать с фактическим капиталом.'),
+    el('div', 'grid', null),
+    preview,
+    el('div', 'modal-buttons', null),
+    list,
+  );
+  modal.querySelector('.grid').append(
+    field('Дата', date), field('Направление', kind),
+    field('Счёт', account), amountField,
+    rateField, field('Комментарий', comment),
+  );
+  modal.querySelector('.modal-buttons').append(cancel, save);
+
+  const backdrop = el('div', 'modal-backdrop');
+  backdrop.append(modal);
+  cancel.onclick = () => backdrop.remove();
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+  save.onclick = async () => {
+    if (!date.value || !account.value.trim() || !Number(amount.value)) {
+      alert('Укажите дату, счёт и сумму.');
+      return;
+    }
+    const payload = {
+      date: date.value,
+      account: account.value.trim(),
+      amount: Math.abs(Number(amount.value)),
+      ccy: ccy.value,
+      kind: kind.value,
+      usdRub: Number(rate.value) || 0,
+      comment: comment.value,
+    };
+    if (existing) await window.api.flows.update(existing.id, payload);
+    else await window.api.flows.add(payload);
+    backdrop.remove();
+    reload();
+  };
+
+  document.body.append(backdrop);
+}
+
 // ---------- curve ----------
 
-function drawCurve(canvas, rows, journal, unit) {
+function drawCurve(canvas, rows, journal, unit, flows) {
   const H = 320, padL = 64, padR = 16, padTop = 18, padBot = 30;
 
   function render(hoverIdx) {
@@ -308,6 +436,10 @@ function drawCurve(canvas, rows, journal, unit) {
 
   let geom = render(-1);
 
+  // money moved between the previous snapshot and this one
+  const movedSince = (i) => B().flowsUpTo(flows, rows[i].date)
+    - (i === 0 ? 0 : B().flowsUpTo(flows, rows[i - 1].date));
+
   // what the hovered snapshot actually held, plus how it compares to the journal
   function tipHtml(i) {
     const row = rows[i];
@@ -321,6 +453,7 @@ function drawCurve(canvas, rows, journal, unit) {
       + `<div class="tip-row"><span>по журналу</span><span class="tv">${money(toUnit(journal[i]))}</span></div>`
       + `<div class="tip-row"><span>расхождение</span><span class="tv ${sign(drift)}">${money(toUnit(drift))}</span></div>`
       + (accounts ? `<div class="tip-sep"></div>${accounts}` : '')
+      + (movedSince(i) ? `<div class="tip-row"><span>движения с прошлой</span><span class="tv ${sign(movedSince(i))}">${money(toUnit(movedSince(i)))}</span></div>` : '')
       + `<div class="tip-sub">курс ${row.usdRub || '—'}${row.comment ? ' · ' + row.comment : ''}</div>`;
   }
 
@@ -418,16 +551,63 @@ function snapshotsTable(rows) {
   return panel;
 }
 
+function flowsTable(flows) {
+  const panel = card('Ввод и вывод средств', 'wide');
+  if (!flows.length) {
+    panel.append(el('div', 'panel-empty', 'Движений пока нет. «+ Ввод / вывод» — если заводили или снимали деньги.'));
+    return panel;
+  }
+  const table = el('table', 'mini-table');
+  const thead = el('thead');
+  const htr = el('tr');
+  ['Дата', 'Счёт', 'Направление', 'Сумма', 'В рублях', 'Комментарий', ''].forEach((t) => htr.append(el('th', null, t)));
+  thead.append(htr);
+  const tbody = el('tbody');
+  [...flows].reverse().forEach((f) => {
+    const v = B().flowRub(f);
+    const tr = el('tr');
+    tr.append(el('td', null, shortDate(f.date)));
+    tr.append(el('td', null, f.account || '—'));
+    const dir = el('td');
+    dir.append(el('span', 'pill ' + (f.kind === 'out' ? 'out' : 'in'), f.kind === 'out' ? 'вывод' : 'ввод'));
+    tr.append(dir);
+    tr.append(el('td', 'num', `${Number(f.amount).toLocaleString('ru-RU')} ${f.ccy === 'RUB' ? '₽' : '$'}`));
+    tr.append(el('td', 'num ' + sign(v), rub(v)));
+    tr.append(el('td', null, f.comment || ''));
+    const act = el('td', 'num');
+    const edit = el('button', 'btn icon', '✎');
+    edit.title = 'Редактировать';
+    edit.onclick = () => openFlowForm(f);
+    const del = el('button', 'btn icon', '✕');
+    del.title = 'Удалить';
+    del.onclick = async () => {
+      if (!confirm(`Удалить движение от ${shortDate(f.date)}?`)) return;
+      await window.api.flows.remove(f.id);
+      reload();
+    };
+    const wrap = el('span', 'row-actions');
+    wrap.append(edit, del);
+    act.append(wrap);
+    tr.append(act);
+    tbody.append(tr);
+  });
+  table.append(thead, tbody);
+  panel.append(table);
+  return panel;
+}
+
 // ---------- entry point ----------
 
-function renderBalances(container, snapshots, trades) {
-  ctx = { container, snapshots, trades };
+function renderBalances(container, snapshots, trades, flows) {
+  ctx = { container, snapshots, trades, flows: flows || [] };
   container.innerHTML = '';
 
   const bar = el('div', 'period-bar');
   const addBtn = el('button', 'btn primary', '+ Отметка баланса');
   addBtn.onclick = () => openSnapshotForm(null);
-  bar.append(addBtn);
+  const addFlowBtn = el('button', 'btn ghost', '+ Ввод / вывод');
+  addFlowBtn.onclick = () => openFlowForm(null);
+  bar.append(addBtn, addFlowBtn);
 
   if (snapshots.length) {
     const label = el('span', 'period-label', 'График:');
@@ -448,8 +628,9 @@ function renderBalances(container, snapshots, trades) {
 
   const rows = B().deltas(snapshots);
   const latest = rows[rows.length - 1];
-  const journal = B().journalLine(snapshots, trades);
+  const journal = B().journalLine(snapshots, trades, ctx.flows);
   const drift = latest.rub - journal[journal.length - 1];
+  const moved = B().flowTotals(ctx.flows);
 
   const metrics = el('div', 'metrics');
   metrics.append(
@@ -459,8 +640,10 @@ function renderBalances(container, snapshots, trades) {
     metric('Изменение, %', pct1(latest.deltaPct), sign(latest.deltaPct)),
     metric('Отметок', String(rows.length)),
     metric('Последняя', shortDate(latest.date)),
+    metric('Заведено', rub(moved.in), moved.in ? 'pos' : ''),
+    metric('Выведено', rub(moved.out), moved.out ? 'neg' : ''),
     metric('Расхождение с журналом', rub(drift), sign(drift),
-      'Фактический капитал минус капитал первой отметки плюс профит по сделкам. Это вводы, выводы и неучтённые издержки.'),
+      'Фактический капитал минус (капитал первой отметки + профит по сделкам + вводы − выводы). Остаётся то, что не попало в дневник.'),
   );
   container.append(metrics);
 
@@ -479,10 +662,11 @@ function renderBalances(container, snapshots, trades) {
   legend.append(legendItem('actual', 'по отметкам'), legendItem('journal', 'по журналу'));
   curve.append(legend);
   grid.append(curve);
-  requestAnimationFrame(() => drawCurve(canvas, rows, journal, state.unit));
+  requestAnimationFrame(() => drawCurve(canvas, rows, journal, state.unit, ctx.flows));
 
   grid.append(accountsPanel(snapshots[snapshots.length - 1]));
   grid.append(snapshotsTable(rows));
+  grid.append(flowsTable(ctx.flows));
 }
 
 window.balancesView = { renderBalances };

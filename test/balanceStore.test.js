@@ -74,3 +74,53 @@ test('a corrupt file reads as empty instead of throwing', () => {
   fs.writeFileSync(path.join(dir, 'balances.json'), '{ not json', 'utf8');
   assert.deepStrictEqual(createBalanceStore({ dataDir: dir }).list(), []);
 });
+
+// ---- cash movements live in the same file as the snapshots ----
+
+const flow = (over = {}) => ({
+  date: '2026-08-05', account: 'MOEX', amount: 100000, ccy: 'RUB',
+  kind: 'in', usdRub: 80, comment: '', ...over,
+});
+
+test('listFlows — empty until something is added', () => {
+  assert.deepStrictEqual(createBalanceStore({ dataDir: tmpDir() }).listFlows(), []);
+});
+
+test('addFlow — assigns an id and persists beside the snapshots', () => {
+  const dir = tmpDir();
+  const store = createBalanceStore({ dataDir: dir });
+  store.add(snap());
+  const added = store.addFlow(flow());
+  assert.ok(added.id);
+  const reloaded = createBalanceStore({ dataDir: dir });
+  assert.strictEqual(reloaded.listFlows().length, 1);
+  assert.strictEqual(reloaded.list().length, 1, 'snapshots survive a flow write');
+});
+
+test('listFlows — oldest first', () => {
+  const store = createBalanceStore({ dataDir: tmpDir() });
+  store.addFlow(flow({ date: '2026-08-20' }));
+  store.addFlow(flow({ date: '2026-08-01' }));
+  assert.deepStrictEqual(store.listFlows().map((f) => f.date), ['2026-08-01', '2026-08-20']);
+});
+
+test('updateFlow / removeFlow — patch and drop by id', () => {
+  const dir = tmpDir();
+  const store = createBalanceStore({ dataDir: dir });
+  const added = store.addFlow(flow());
+  assert.strictEqual(store.updateFlow(added.id, { amount: 250000 }).amount, 250000);
+  assert.throws(() => store.updateFlow('nope', { amount: 1 }), /not found/i);
+  store.removeFlow(added.id);
+  assert.deepStrictEqual(createBalanceStore({ dataDir: dir }).listFlows(), []);
+});
+
+test('replaceAllFlows — bulk swap for a DB import', () => {
+  const dir = tmpDir();
+  const store = createBalanceStore({ dataDir: dir });
+  store.addFlow(flow());
+  store.replaceAllFlows([flow({ date: '2026-09-01', amount: 5 })]);
+  const rows = createBalanceStore({ dataDir: dir }).listFlows();
+  assert.strictEqual(rows.length, 1);
+  assert.strictEqual(rows[0].date, '2026-09-01');
+  assert.ok(rows[0].id, 'imported movements still get ids');
+});

@@ -376,6 +376,8 @@ header {
 }
 .pill.open { color: var(--open); background: rgba(230,180,68,.14); }
 .pill.closed { color: var(--pos); background: rgba(70,196,106,.14); }
+.pill.in { color: var(--pos); background: color-mix(in srgb, var(--pos) 16%, transparent); }
+.pill.out { color: var(--neg); background: color-mix(in srgb, var(--neg) 16%, transparent); }
 
 /* journal: scrolling trade list fills the view, thin total bar pinned at bottom */
 .journal { display: flex; flex-direction: column; height: 100%; }

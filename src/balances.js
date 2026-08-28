@@ -61,20 +61,48 @@ function byAccount(snap) {
   });
 }
 
+// ---------- deposits and withdrawals ----------
+
+// signed roubles: a deposit adds, a withdrawal subtracts, dollars convert at
+// the rate recorded with the movement itself
+function flowRub(flow) {
+  const raw = num(flow.amount) * (flow.ccy === 'RUB' ? 1 : num(flow.usdRub));
+  return flow.kind === 'out' ? -raw : raw;
+}
+
+// net movement up to and including a date
+function flowsUpTo(flows, date) {
+  return (flows || [])
+    .filter((f) => String(f.date) <= String(date))
+    .reduce((s, f) => s + flowRub(f), 0);
+}
+
+function flowTotals(flows) {
+  return (flows || []).reduce((acc, f) => {
+    const v = flowRub(f);
+    if (v >= 0) acc.in += v; else acc.out += v;
+    acc.net += v;
+    return acc;
+  }, { in: 0, out: 0, net: 0 });
+}
+
 // The journal's view of the same timeline: start from the capital of the first
-// snapshot and add the profit of every trade closed by each snapshot's date.
-// The gap against the real curve is deposits, withdrawals or unrecorded costs.
-function journalLine(snaps, trades) {
+// snapshot, add the profit of every trade closed by each snapshot's date, and
+// the money moved in or out by then. What is left between this line and the
+// real one is unrecorded costs — not transfers.
+function journalLine(snaps, trades, flows) {
   const rows = series(snaps);
   if (!rows.length) return [];
   const base = rows[0].rub;
   const closed = (trades || []).filter((t) => calc.isClosed(t));
-  return rows.map((row) => base + closed
-    .filter((t) => String(t.closeDate) <= String(row.date))
-    .reduce((s, t) => s + calc.netProfitRub(t), 0));
+  return rows.map((row) => base
+    + closed
+      .filter((t) => String(t.closeDate) <= String(row.date))
+      .reduce((s, t) => s + calc.netProfitRub(t), 0)
+    + flowsUpTo(flows, row.date));
 }
 
-const _api = { snapshotTotals, series, deltas, byAccount, journalLine };
+const _api = { snapshotTotals, series, deltas, byAccount, journalLine, flowRub, flowsUpTo, flowTotals };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.balances = _api;
 })();

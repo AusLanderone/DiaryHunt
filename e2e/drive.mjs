@@ -382,6 +382,28 @@ try {
     Math.abs(parseFloat(res.autoPayout) + 295) < 2, `got ${res.autoPayout}`);
   check('form manual payout override → Чистый профит 1 044,40 ₽',
     norm(res.manualLive).includes('044,40₽'), res.manualLive);
+
+  // «Правка» — the manual fix that has always counted in the net profit but had
+  // no field to enter it in
+  const adjRes = await page.evaluate(() => {
+    const label = [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /правка/i.test(l.textContent));
+    if (!label) return { missing: true };
+    const input = label.querySelector('input');
+    const set = (v) => { input.value = v; input.dispatchEvent(new Event('input', { bubbles: true })); };
+    const net = () => document.querySelector('.live').innerText;
+    const before = net();
+    set('-100');
+    const after = net();
+    set('0');
+    return { label: label.textContent, initial: input.value, before, after, restored: net() };
+  });
+  check('the form offers a «Правка» field, empty by default', !adjRes.missing && adjRes.initial === '0',
+    JSON.stringify(adjRes.label || adjRes));
+  check('«Правка» −100 ₽ moves the net profit to 944,40 ₽',
+    norm(adjRes.after || '').includes('944,40₽'), adjRes.after);
+  check('clearing «Правка» puts the net profit back',
+    norm(adjRes.restored || '') === norm(adjRes.before || ''), adjRes.restored);
   // swap lives on each leg, in that leg's currency: ₽ on MOEX, $ elsewhere
   const swapRes = await page.evaluate(() => {
     const swapLabel = (i) => [...document.querySelectorAll('.leg-box')[i].querySelectorAll('label')]
@@ -490,16 +512,24 @@ try {
     /впиши свой или выбери/.test(tickerUi.placeholder), tickerUi.placeholder);
 
   await page.evaluate(() => {
-    const input = [...document.querySelectorAll('.modal > .grid > label')]
-      .find((l) => /тикер/i.test(l.textContent)).querySelector('input');
+    const byLabel = (re) => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => re.test(l.textContent)).querySelector('input');
+    const input = byLabel(/тикер/i);
     input.value = 'NEWTKR';
     input.dispatchEvent(new Event('input', { bubbles: true }));
+    // the same save carries a «Правка» value, to prove the field is persisted
+    const adj = byLabel(/правка/i);
+    adj.value = '-250';
+    adj.dispatchEvent(new Event('input', { bubbles: true }));
     [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /сохранить/i.test(b.textContent)).click();
   });
   await page.waitForSelector('.modal', { state: 'detached', timeout: 10000 });
   const cfgTickers = await page.evaluate(() => window.api.config.get().then((c) => c.tickers));
   check('a newly typed ticker is remembered in the dictionary',
     cfgTickers.includes('NEWTKR'), JSON.stringify(cfgTickers));
+  const savedAdj = await page.evaluate(() => window.api.trades.list()
+    .then((ts) => ts.find((x) => x.ticker === 'NEWTKR')?.adjustment ?? null));
+  check('the «Правка» entered in the form is saved with the trade', savedAdj === -250, String(savedAdj));
 
   await page.evaluate(() => document.querySelector('#btn-add').click());
   await page.waitForSelector('.modal', { timeout: 8000 });

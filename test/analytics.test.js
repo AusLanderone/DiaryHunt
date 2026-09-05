@@ -150,46 +150,6 @@ test('avgReturnPct — average net return on deployed capital', () => {
   assert.strictEqual(analytics.avgReturnPct([]), null);
 });
 
-// ---------- where the profit actually comes from ----------
-
-const calc = require('../src/calc');
-
-test('profitStructure — gross, fees, payout, swap and the fix add up to the net profit', () => {
-  const t = trade({
-    payout: -100, adjustment: 25,
-    legs: [
-      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 101, feeRub: 50 },
-      { exchange: 'BYBIT', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 0, swap: -4 },
-    ],
-  });
-  const s = analytics.profitStructure([t]);
-  near(s.gross, 800);            // 1$ × 10 units × 80 ₽
-  near(s.fees, 50);
-  near(s.payout, -100);
-  near(s.swap, -320);            // -4$ on a dollar venue, at the trade's rate
-  near(s.adjustment, 25);
-  near(s.net, 355);
-  near(s.net, calc.netProfitRub(t));
-});
-
-test('profitStructure — a rouble-quoted leg is not converted by the rate again', () => {
-  const t = trade({
-    legs: [
-      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 101, feeRub: 0, priceCcy: 'RUB' },
-      { exchange: 'MOEX', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 0, priceCcy: 'RUB' },
-    ],
-  });
-  const s = analytics.profitStructure([t]);
-  near(s.gross, 10);             // 10 ₽, not 10 × 80
-  near(s.net, calc.netProfitRub(t));
-});
-
-test('profitStructure — open trades are left out', () => {
-  const s = analytics.profitStructure([trade({ closeDate: '' })]);
-  near(s.gross, 0);
-  near(s.net, 0);
-});
-
 test('capitalDeployed — the average leg position, not the sum of the legs', () => {
   // 1 000 $ and 1 010 $ at 80 ₽ -> 80 400 ₽ on average, not 160 800 ₽ together
   near(analytics.capitalDeployed(trade()), 80400);

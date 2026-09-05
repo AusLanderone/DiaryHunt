@@ -299,35 +299,61 @@ try {
   check('stats page never scrolls sideways', layout.overflow <= 0, `overflow ${layout.overflow}px`);
 
   console.log('\n[3c] period filter');
-  await page.evaluate(() => window.api.trades.add({
-    openDate: '2025-03-02', closeDate: '2025-03-02', type: 'Фьючи', ticker: 'OLD', tag: '',
+  // The sheet-verified fixtures carry fixed August 2026 dates, so what «Месяц»
+  // should show depends on the day the suite runs. This section therefore adds
+  // its own trades relative to today — a loser closed over a year back and a
+  // winner closed today — and works out the expected counts from the dates it
+  // knows, instead of assuming the calendar sits in August 2026.
+  // local calendar day, not UTC: the app's period filter reads the local clock,
+  // and toISOString would hand back yesterday for the first hours of the day
+  const isoDay = (d) => {
+    const x = new Date(d), p = (n) => String(n).padStart(2, '0');
+    return `${x.getFullYear()}-${p(x.getMonth() + 1)}-${p(x.getDate())}`;
+  };
+  const daysAgo = (n) => isoDay(Date.now() - n * 86400000);
+  const todayIso = isoDay(Date.now());
+  const oldDate = daysAgo(400);
+  const oldTrade = {
+    openDate: oldDate, closeDate: oldDate, type: 'Фьючи', ticker: 'OLD', tag: '',
     usdRub: 80, payout: 0, adjustment: 0, comment: 'e2e old',
     legs: [
       { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 99, feeRub: 0 },
       { exchange: 'FOREX', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 0 },
     ],
-  }));
+  };
+  // a winner closed today, so «Месяц» always has something to show
+  const freshTrade = { ...trade1, ticker: 'NOW', comment: 'e2e today',
+    openDate: todayIso, closeDate: todayIso };
+  for (const t of [oldTrade, freshTrade]) await page.evaluate((x) => window.api.trades.add(x), t);
   await page.reload();
   await page.waitForSelector('#tab-stats', { timeout: 10000 });
   await page.evaluate(() => document.querySelector('#tab-stats').click());
   await page.waitForTimeout(300);
   const closedCount = () => page.evaluate(() =>
     document.querySelector('.metric .value')?.textContent.trim());
-  check('all-time period counts the 2025 trade too', (await closedCount()) === '3', `got ${await closedCount()}`);
+  // the period filter keeps a trade closed on or after the first of the month
+  const monthStart = todayIso.slice(0, 8) + '01';
+  const closedDates = [trade1.closeDate, trade3.closeDate, oldTrade.closeDate, freshTrade.closeDate];
+  const inMonth = closedDates.filter((d) => d >= monthStart).length;
+  check('all-time period counts the year-old trade too',
+    (await closedCount()) === String(closedDates.length), `got ${await closedCount()}`);
   await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
     .find((b) => b.textContent === 'Месяц').click());
   await page.waitForTimeout(300);
   await page.screenshot({ path: path.join(SHOT, '05-stats-month.png'), fullPage: true });
-  check('month period drops the 2025 trade', (await closedCount()) === '2', `got ${await closedCount()}`);
+  check('month period drops the year-old trade',
+    (await closedCount()) === String(inMonth) && inMonth < closedDates.length,
+    `got ${await closedCount()}, expected ${inMonth} of ${closedDates.length}`);
+  // every trade left inside the month is a winner; the loser is the old one
   const winrateMonth = await page.evaluate(() => document.querySelector('#view').innerText);
   check('month period winrate back to 100.0%', norm(winrateMonth).includes('100.0%'));
   await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
     .find((b) => b.textContent === 'Всё время').click());
   await page.waitForTimeout(200);
-  await page.evaluate(() => window.api.trades.list().then((ts) => {
-    const old = ts.find((t) => t.ticker === 'OLD');
-    return old ? window.api.trades.remove(old.id) : null;
-  }));
+  await page.evaluate(() => window.api.trades.list().then((ts) => Promise.all(
+    ts.filter((t) => t.ticker === 'OLD' || t.ticker === 'NOW')
+      .map((t) => window.api.trades.remove(t.id)),
+  )));
 
   console.log('\n[3d] stats survive an empty diary');
   const ids = await page.evaluate(() => window.api.trades.list().then((ts) => ts.map((t) => t.id)));

@@ -128,6 +128,13 @@ async function openForm(trade, onSaved) {
     el('div', { class: 'field-row' }, [payout, autoToggle]),
   ]);
 
+  // The free-form fix to the net profit: whatever neither the fees, the payout
+  // nor the swap covers — a broker correction, a rounding difference. It has
+  // always counted in netProfitRub and shown in the trade detail; until now the
+  // form only carried the old value through, with no way to enter one.
+  const adjustment = el('input', { type: 'number', step: 'any', value: t.adjustment ?? 0 });
+  adjustment.title = 'Ручная поправка к чистому профиту: то, что не попало ни в комиссии, ни в payout, ни в своп';
+
   // legs live in a list: at least two, no upper bound
   const formulaLine = el('div', { class: 'formula-line' });
   const legsWrap = el('div', { class: 'legs' });
@@ -167,7 +174,7 @@ async function openForm(trade, onSaved) {
   const currentRate = () => (Number(rate.value) || 0) / 100;
   function draft() {
     return { usdRub: Number(usdRub.value) || 0, payout: Number(payout.value) || 0,
-      adjustment: Number(t.adjustment) || 0, closeDate: closeDate.value,
+      adjustment: Number(adjustment.value) || 0, closeDate: closeDate.value,
       legs: legFields.map((f) => f.read()) };
   }
   function item(k, v, cls) {
@@ -201,7 +208,7 @@ async function openForm(trade, onSaved) {
       el('div', { class: 'status' }, [pill(closed ? 'Закрыта' : 'Открыта', closed ? 'closed' : 'open')]),
     );
   }
-  [usdRub, rate, payout, closeDate].forEach((i) => i.addEventListener('input', recompute));
+  [usdRub, rate, payout, adjustment, closeDate].forEach((i) => i.addEventListener('input', recompute));
   renderLegs(t.legs.length ? t.legs : [{}, {}]);
   payoutAuto.addEventListener('change', recompute);
 
@@ -245,6 +252,7 @@ async function openForm(trade, onSaved) {
         el('label', {}, [txt('Тип'), type, typeList]), el('label', {}, [txt('Тикер'), ticker, tickerList]),
         el('label', {}, [txt('Тег'), tag, tagList]), usdRubField,
         field('Ставка payout, %', rate), payoutField,
+        field('Правка ₽', adjustment),
         field('Комментарий', comment, 'full'),
       ]),
       exList,
@@ -276,7 +284,7 @@ async function openForm(trade, onSaved) {
     const payload = {
       openDate: openDate.value, closeDate: closeDate.value, type: typeValue,
       ticker: tickerValue, tag: tagValue, usdRub: Number(usdRub.value) || 0,
-      payout: Number(payout.value) || 0, adjustment: Number(t.adjustment) || 0,
+      payout: Number(payout.value) || 0, adjustment: Number(adjustment.value) || 0,
       payoutAuto: payoutAuto.checked, payoutRate: currentRate(),
       comment: comment.value, legs: legValues,
     };

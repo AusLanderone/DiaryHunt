@@ -181,6 +181,14 @@ header {
   font-family: var(--sans); font-size: 12.5px;
 }
 
+/* sort picker: the visible twin of clicking a column header */
+.journal-bar .sort-control { display: flex; align-items: center; gap: 6px; }
+.journal-bar .chip.dir {
+  min-width: 30px;
+  font-family: var(--mono); font-size: 13px; line-height: 1;
+}
+.journal-bar .chip.dir:disabled { opacity: .45; cursor: default; }
+
 /* sortable column header */
 .journal-head {
   flex: none;
@@ -196,6 +204,8 @@ header {
 .journal-head .sortable:hover { color: var(--text); }
 .journal-head .active { color: var(--accent); }
 .journal-head .arrow { font-size: 8px; }
+.journal-head .arrow.hint { opacity: .3; font-size: 9px; }
+.journal-head .sortable:hover .arrow.hint { opacity: .7; }
 
 .journal-scroll { flex: 1; min-height: 0; overflow: auto; }
 
@@ -607,6 +617,40 @@ canvas { display: block; width: 100%; }
   text-transform: uppercase; color: var(--muted);
 }
 .data-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+
+/* dictionaries: the values the trade form offers */
+.dicts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; margin-top: 12px; }
+.dict-block { min-width: 0; }
+.dict-name {
+  margin-bottom: 6px;
+  font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--muted);
+}
+.dict-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.dict-empty { font-size: 12px; color: var(--muted-2); }
+.dict-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 5px 3px 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12.5px; color: var(--text);
+}
+.dict-chip .dict-count {
+  padding: 0 5px;
+  background: var(--line); border-radius: 999px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+.dict-chip .btn.icon { padding: 0 3px; font-size: 11px; line-height: 1; }
+.dict-chip.ghost { cursor: pointer; color: var(--muted); border-style: dashed; padding: 3px 10px; }
+.dict-chip.ghost:hover { color: var(--text); border-color: var(--muted-2); }
+.dict-add-row { display: flex; gap: 6px; margin-top: 8px; }
+.dict-add {
+  flex: 1; min-width: 0;
+  padding: 5px 10px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
+  color: var(--text); font-family: var(--sans); font-size: 12.5px;
+}
+.dict-add:focus { outline: none; border-color: var(--accent); }
+.dict-hidden { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; font-size: 11.5px; color: var(--muted-2); }
 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }

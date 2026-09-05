@@ -97,3 +97,34 @@ test('importAll carries the ticker dictionary too', () => {
   cfg.importAll({ tickers: ['GOLD', 'ED'], tags: ['Схождение'] });
   assert.deepStrictEqual(createConfig({ dataDir: dir }).get().tickers, ['GOLD', 'ED']);
 });
+
+test('removeItem also hides the value, so trades cannot bring it back', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.get();
+  cfg.removeItem('tags', 'Раскор');
+  assert.deepStrictEqual(createConfig({ dataDir: dir }).get().hidden.tags, ['Раскор']);
+});
+
+test('addItem brings a hidden value back into the dictionary', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.get();
+  cfg.removeItem('tags', 'Раскор');
+  cfg.addItem('tags', 'Раскор');
+  const data = createConfig({ dataDir: dir }).get();
+  assert.ok(data.tags.includes('Раскор'), 'back in the dictionary');
+  assert.deepStrictEqual(data.hidden.tags, [], 'and no longer hidden');
+});
+
+test('hidden survives a config with no hidden section yet', () => {
+  const cfg = createConfig({ dataDir: tmpDir() });
+  assert.deepStrictEqual(cfg.get().hidden, { exchanges: [], tags: [], types: [], tickers: [] });
+});
+
+test('importAll carries the hidden lists', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  cfg.importAll({ tags: ['Схождение'], hidden: { tags: ['Раскор'] } });
+  assert.deepStrictEqual(createConfig({ dataDir: dir }).get().hidden.tags, ['Раскор']);
+});

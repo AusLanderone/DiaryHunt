@@ -212,3 +212,40 @@ test('filterTrades — type and tag narrow together', () => {
   ];
   assert.deepStrictEqual(nums(jv.filterTrades(list, { ...ALL, type: 'Фьючи', tag: 'Раскор' })), [2]);
 });
+
+// ---------- sorting by figures that aren't columns ----------
+
+test('sortTrades — by position size, biggest first', () => {
+  // numbered against the size, so a fallback to «by number» could not pass
+  const small = trade({ num: 3, legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 10, units: 10, exitPrice: 11, feeRub: 0 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 10, units: 10, exitPrice: 10, feeRub: 0 },
+  ] });
+  const big = trade({ num: 1 });   // 100 × 10 and 101 × 10 at 80 ₽
+  assert.deepStrictEqual(nums(jv.sortTrades([small, big], 'size', 'desc')), [1, 3]);
+  assert.deepStrictEqual(nums(jv.sortTrades([small, big], 'size', 'asc')), [3, 1]);
+});
+
+test('sortTrades — by time in the trade, open ones at the bottom', () => {
+  const quick = trade({ num: 1, openDate: '2026-08-10', closeDate: '2026-08-11' });
+  const slow = trade({ num: 2, openDate: '2026-08-01', closeDate: '2026-08-12' });
+  const open = trade({ num: 3, open: true });
+  assert.deepStrictEqual(nums(jv.sortTrades([quick, slow, open], 'hold', 'desc')), [2, 1, 3]);
+  assert.deepStrictEqual(nums(jv.sortTrades([quick, slow, open], 'hold', 'asc')), [1, 2, 3]);
+});
+
+test('sortTrades — by return on the position, open ones at the bottom', () => {
+  const rich = trade({ num: 1 });
+  const poor = trade({ num: 2, legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 1000, units: 10, exitPrice: 1001, feeRub: 0 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 1001, units: 10, exitPrice: 1001, feeRub: 0 },
+  ] });
+  const open = trade({ num: 3, open: true });
+  assert.deepStrictEqual(nums(jv.sortTrades([poor, rich, open], 'ret', 'desc')), [1, 2, 3]);
+});
+
+test('SORT_FIELDS name every sortable figure for the picker', () => {
+  assert.deepStrictEqual(jv.SORT_FIELDS.map((f) => f.key),
+    ['num', 'date', 'ticker', 'spread', 'profit', 'size', 'hold', 'ret']);
+  assert.ok(jv.SORT_FIELDS.every((f) => f.label));
+});

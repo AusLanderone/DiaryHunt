@@ -87,9 +87,9 @@ async function openForm(trade, onSaved) {
   const openDate = el('input', { type: 'date', value: t.openDate || '' });
   const closeDate = el('input', { type: 'date', value: t.closeDate || '' });
   // Every editable dropdown offers the dictionary PLUS whatever the diary already
-  // holds. The dictionary only grows when a trade is saved through this form, so
-  // imported or hand-edited trades would otherwise contribute nothing to pick from.
-  const known = (dict, pick) => [...new Set([...(dict || []), ...all.flatMap(pick).filter(Boolean)])].sort();
+  // holds, minus what was removed in the settings — src/dicts.js is the single
+  // place that decides this, so the form and the settings screen never disagree.
+  const known = (kind) => window.dicts.options(kind, cfg, all);
   const combo = (id, list, value) => {
     const dl = el('datalist', { id }, list.map((x) => new Option(x, x)));
     const input = el('input', { type: 'text', list: id, value: value || '',
@@ -97,14 +97,14 @@ async function openForm(trade, onSaved) {
     return { dl, input };
   };
 
-  const typeCombo = combo('dh-typelist', known(cfg.types, (x) => [x.type]), t.type);
+  const typeCombo = combo('dh-typelist', known('types'), t.type);
   const typeList = typeCombo.dl, type = typeCombo.input;
-  const tickerCombo = combo('dh-tickerlist', known(cfg.tickers, (x) => [x.ticker]), t.ticker);
+  const tickerCombo = combo('dh-tickerlist', known('tickers'), t.ticker);
   const tickerList = tickerCombo.dl, ticker = tickerCombo.input;
-  const tagCombo = combo('dh-taglist', known(cfg.tags, (x) => [x.tag]), t.tag);
+  const tagCombo = combo('dh-taglist', known('tags'), t.tag);
   const tagList = tagCombo.dl, tag = tagCombo.input;
   const exList = el('datalist', { id: 'dh-exlist' },
-    known(cfg.exchanges, (x) => x.legs.map((l) => l.exchange)).map((x) => new Option(x, x)));
+    known('exchanges').map((x) => new Option(x, x)));
   const usdRub = el('input', { type: 'number', step: 'any', value: t.usdRub ?? '' });
   // "↻ курс" fills the field from MOEX (CBR as fallback); typing over it still wins
   const rateBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↻ курс')]);

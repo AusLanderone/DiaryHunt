@@ -157,11 +157,15 @@ function profitHistogram(profits, bins = 8) {
   return out;
 }
 
-// total entry value of every leg, in ₽. Each leg converts by its own price
-// currency — multiplying the whole sum by the rate inflated rouble-quoted legs
-// (SI, CR) by the rate itself and threw them into the top capital band.
+// Size of a trade in ₽: the AVERAGE entry value of its legs, not their sum.
+// The legs of an arbitrage trade are two sides of one position, so their sum
+// double-counts it; the average reads as "a position of this size on each
+// side". Each leg converts by its own price currency — multiplying the whole
+// sum by the rate inflated rouble-quoted legs (SI, CR) by the rate itself and
+// threw them into the top capital band.
 function capitalDeployed(trade) {
-  return calc.positionStartRub(trade);
+  const legs = trade.legs.length;
+  return legs ? calc.positionStartRub(trade) / legs : 0;
 }
 
 const CAPITAL_EDGES = [1e6, 3e6, 1e7];

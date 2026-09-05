@@ -102,11 +102,6 @@ test('profitHistogram — identical profits still produce a single populated bin
   assert.strictEqual(bins.reduce((s, b) => s + b.count, 0), 2);
 });
 
-test('capitalDeployed — both legs entry value converted to roubles', () => {
-  // (100*10 + 101*10) $ * 80 = 160 800 ₽
-  near(analytics.capitalDeployed(trade()), 160800);
-});
-
 test('calendarMap — profit and trade count keyed by close date', () => {
   const a = trade({ num: 1, closeDate: '2026-08-12' });
   const b = trade({ num: 2, closeDate: '2026-08-12', payout: 100 });
@@ -141,8 +136,8 @@ test('filterByPeriod — open trades are kept in every window', () => {
 });
 
 test('capitalBuckets — closed trades bucketed by deployed capital in roubles', () => {
-  const small = trade({ num: 1 });                                   // 160 800 ₽
-  const large = trade({ num: 2, usdRub: 8000 });                     // 16 080 000 ₽
+  const small = trade({ num: 1 });                                   // 80 400 ₽ per leg
+  const large = trade({ num: 2, usdRub: 20000 });                    // 20 100 000 ₽ per leg
   const buckets = analytics.capitalBuckets([small, large]);
   assert.strictEqual(buckets.reduce((s, b) => s + b.count, 0), 2);
   assert.strictEqual(buckets[0].count, 1, 'the 160к trade lands in the lowest band');
@@ -195,6 +190,22 @@ test('profitStructure — open trades are left out', () => {
   near(s.net, 0);
 });
 
+test('capitalDeployed — the average leg position, not the sum of the legs', () => {
+  // 1 000 $ and 1 010 $ at 80 ₽ -> 80 400 ₽ on average, not 160 800 ₽ together
+  near(analytics.capitalDeployed(trade()), 80400);
+});
+
+test('capitalDeployed — a three-leg trade averages over all three', () => {
+  const t = trade({
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 101, feeRub: 0, priceCcy: 'RUB' },
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 200, units: 10, exitPrice: 200, feeRub: 0, priceCcy: 'RUB' },
+      { exchange: 'VANTAGE', side: 'Шорт', entryPrice: 300, units: 10, exitPrice: 300, feeRub: 0, priceCcy: 'RUB' },
+    ],
+  });
+  near(analytics.capitalDeployed(t), 2000);   // (1000 + 2000 + 3000) / 3
+});
+
 test('capitalDeployed — a rouble-quoted leg counts at face value', () => {
   const t = trade({
     legs: [
@@ -202,5 +213,5 @@ test('capitalDeployed — a rouble-quoted leg counts at face value', () => {
       { exchange: 'MOEX', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 0, priceCcy: 'RUB' },
     ],
   });
-  near(analytics.capitalDeployed(t), 2010);   // 2 010 ₽, not 2 010 × 80
+  near(analytics.capitalDeployed(t), 1005);   // (1 000 + 1 010) / 2 ₽, not × 80
 });

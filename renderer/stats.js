@@ -603,7 +603,7 @@ function renderStats(container, trades) {
   grid.append(
     breakdownPanel('Профит по спреду входа', an.spreadBuckets(closed)),
     breakdownPanel('Профит по времени удержания', an.holdingBuckets(closed)),
-    breakdownPanel('Профит по объёму позиции', an.capitalBuckets(closed)),
+    breakdownPanel('Профит по объёму позиции — средняя нога', an.capitalBuckets(closed)),
     breakdownPanel('Профит по дню недели', an.byWeekday(closed)),
     breakdownPanel('Профит по тикеру', byTicker),
     breakdownPanel('Профит по тегу', byTag),

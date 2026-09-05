@@ -55,7 +55,7 @@ test('trade totals match sheet (trade 1)', () => {
   near(calc.feeTotalRub(trade1), 502);
   near(calc.pnlNet(trade1), 16.0, 0.02);
   near(calc.pnlRub(trade1), 1339.4, 0.5);
-  near(calc.pnlNetPct(trade1), 0.00016947, 1e-6);
+  near(calc.pnlNetPct(trade1), 0.00033894, 1e-6);   // measured against one leg, not both
   near(calc.netProfitRub(trade1), 1044.4, 0.5);
 });
 
@@ -213,6 +213,11 @@ test('pnlRub — each leg converts by its own currency, fees are already roubles
 
 test('pnlNet — the dollar figure is the rouble one at the trade rate', () => {
   near(calc.pnlNet(mixed), (100 + 85 - 80) / 85);
+});
+
+test('positionAvgRub — the size of one side of the trade', () => {
+  // the legs are two sides of one position, so the size is their average
+  near(calc.positionAvgRub(mixed), (85500 + 7.19 * 100 * 85) / 2);
 });
 
 test('positionStartRub / positionEndRub — legs summed in roubles', () => {

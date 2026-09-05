@@ -27,7 +27,20 @@ function periodStart(period, now) {
   return null;
 }
 
-// { query, status: all|open|closed, tag: all|<tag>, type: all|<type>, period: all|month|quarter|year }
+// Tag, ticker and type each filter the same way: keep only the chosen values,
+// or drop them. Nothing chosen means the dimension isn't filtering at all. The
+// older single-value form ('all' or one value) is still understood, so a caller
+// that never learned about modes keeps working.
+function matches(spec, value) {
+  if (!spec || spec === 'all') return true;
+  if (typeof spec === 'string') return value === spec;
+  const values = spec.values || [];
+  if (!values.length) return true;
+  return values.includes(value) === (spec.mode !== 'exclude');
+}
+
+// { query, status: all|open|closed, period: all|month|quarter|year,
+//   tag|ticker|type: 'all' | <value> | { mode: include|exclude, values: [...] } }
 function filterTrades(trades, filter = {}, now = new Date()) {
   const q = (filter.query || '').trim().toLowerCase();
   const start = periodStart(filter.period, now);
@@ -35,8 +48,9 @@ function filterTrades(trades, filter = {}, now = new Date()) {
     if (q && !haystack(t).includes(q)) return false;
     if (filter.status === 'open' && calc.isClosed(t)) return false;
     if (filter.status === 'closed' && !calc.isClosed(t)) return false;
-    if (filter.tag && filter.tag !== 'all' && (t.tag || '') !== filter.tag) return false;
-    if (filter.type && filter.type !== 'all' && (t.type || '') !== filter.type) return false;
+    if (!matches(filter.tag, t.tag || '')) return false;
+    if (!matches(filter.ticker, t.ticker || '')) return false;
+    if (!matches(filter.type, t.type || '')) return false;
     if (start && (t.openDate || '') < start) return false;
     return true;
   });

@@ -548,7 +548,7 @@ function renderStats(container, trades) {
       'Сумма прибылей / сумма убытков. Больше 1 — система в плюсе'),
     metric('Средний плюс', aw === null ? dash : F.fmtRub(aw), 'pos'),
     metric('Средний минус', al === null ? dash : F.fmtRub(al), 'neg'),
-    metric('Ср. доходность', ret === null ? dash : pct(ret), sign(ret || 0), 'Средний чистый % на задействованный капитал'),
+    metric('Ср. доходность', ret === null ? dash : pct(ret), sign(ret || 0), 'Средний чистый % на объём одной ноги — той стороны позиции, которую сделка реально занимает'),
     metric('Ср. время в сделке', avgHold === null ? dash : avgHold.toFixed(1).replace('.', ',') + ' дн'),
     metric('Лучшая сделка', F.fmtRub(best), sign(best)),
     metric('Худшая сделка', F.fmtRub(worst), sign(worst)),

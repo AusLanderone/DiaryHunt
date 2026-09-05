@@ -145,8 +145,8 @@ test('capitalBuckets — closed trades bucketed by deployed capital in roubles',
 });
 
 test('avgReturnPct — average net return on deployed capital', () => {
-  // gross 10$ on 2010$ deployed, no fees -> ~0,498%
-  near(analytics.avgReturnPct([trade()]), 0.004975, 1e-5);
+  // gross 10$ against one side of the position (1 005$), no fees -> ~0,995%
+  near(analytics.avgReturnPct([trade()]), 0.00995, 1e-5);
   assert.strictEqual(analytics.avgReturnPct([]), null);
 });
 

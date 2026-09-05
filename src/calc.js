@@ -147,9 +147,18 @@ function pnlNet(trade) {
   return rub === null || rate === 0 ? null : rub / rate;
 }
 
+// The size of ONE side of the trade: its legs are two (or three) sides of the
+// same position, so their sum counts the same money twice. Returns ₽.
+function positionAvgRub(trade) {
+  const legs = trade.legs.length;
+  return legs ? positionStartRub(trade) / legs : 0;
+}
+
+// Return on the capital a single side of the trade ties up — the figure that
+// answers "what did this trade earn on the money it needed".
 function pnlNetPct(trade) {
   const rub = pnlRub(trade);
-  const base = positionStartRub(trade);
+  const base = positionAvgRub(trade);
   return rub === null || base === 0 ? null : rub / base;
 }
 
@@ -222,7 +231,7 @@ const _api = {
   legPositionStart, legPositionEnd, legGross,
   entrySpread, exitSpread, spreadTotal, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
-  legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
+  legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub, positionAvgRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,
 };

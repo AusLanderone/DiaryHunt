@@ -195,6 +195,22 @@ try {
   check('the word "пейаут" is gone from the interface',
     !/пейаут/i.test(document_text_probe), document_text_probe.slice(0, 160));
 
+  // the position is one side of the trade, not both legs added together
+  const posSize = await page.evaluate(async () => {
+    const ts = await window.api.trades.list();
+    // the detail belongs to the row right above it — measure that trade
+    const box = document.querySelector('.trade-detail');
+    const ticker = box.previousElementSibling.querySelector('.ticker .tk').textContent.trim();
+    const c = window.calc.computeTrade(ts.find((x) => x.ticker === ticker));
+    const mi = [...box.querySelectorAll('.mi')]
+      .find((x) => /позиция/i.test(x.textContent));
+    return { shown: mi ? mi.innerText.split('\n').join(' ') : '',
+      avg: Math.round(c.positionStartAvgRub), sum: Math.round(c.positionStartRub) };
+  });
+  check('the expanded trade sizes its position by one leg',
+    norm(posSize.shown).includes(String(posSize.avg)) && !norm(posSize.shown).includes(String(posSize.sum)),
+    `${posSize.shown} (leg ${posSize.avg}, both ${posSize.sum})`);
+
   check('expanded detail carries exit spread, total spread and position value',
     /Спред выход/i.test(detail) && /Спред итог/i.test(detail)
     && /Позиция/i.test(detail) && /\$[\d\s]+ → \$[\d\s]+/.test(detail), detail);

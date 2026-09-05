@@ -164,7 +164,7 @@ function profitHistogram(profits, bins = 8) {
 // sum by the rate inflated rouble-quoted legs (SI, CR) by the rate itself and
 // threw them into the top capital band.
 function capitalDeployed(trade) {
-  return calc.positionAvgRub(trade);
+  return calc.positionStartAvgRub(trade);
 }
 
 const CAPITAL_EDGES = [1e6, 3e6, 1e7];

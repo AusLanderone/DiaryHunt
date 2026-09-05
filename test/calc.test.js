@@ -215,9 +215,15 @@ test('pnlNet — the dollar figure is the rouble one at the trade rate', () => {
   near(calc.pnlNet(mixed), (100 + 85 - 80) / 85);
 });
 
-test('positionAvgRub — the size of one side of the trade', () => {
-  // the legs are two sides of one position, so the size is their average
-  near(calc.positionAvgRub(mixed), (85500 + 7.19 * 100 * 85) / 2);
+test('positionStartAvgRub / positionEndAvgRub — one side of the position', () => {
+  // the legs are two sides of one position, so its size is their average
+  near(calc.positionStartAvgRub(mixed), (85500 + 7.19 * 100 * 85) / 2);
+  near(calc.positionEndAvgRub(mixed), (85600 + 7.18 * 100 * 85) / 2);
+});
+
+test('positionEndAvgRub — an open trade has no closing size', () => {
+  const open = { ...mixed, closeDate: '', legs: [mixed.legs[0], { ...mixed.legs[1], exitPrice: '' }] };
+  assert.strictEqual(calc.positionEndAvgRub(open), null);
 });
 
 test('positionStartRub / positionEndRub — legs summed in roubles', () => {
@@ -288,6 +294,8 @@ test('computeTrade — leg figures come with their rouble equivalents', () => {
   near(c.legs[0].grossRub, -100);   // long 85500 -> 85400
   near(c.positionStartRub, 85500 + 11900 + 7.18 * 85);
   near(c.positionEndRub, 85400 + 11880 + 7.175 * 85);
+  near(c.positionStartAvgRub, (85500 + 11900 + 7.18 * 85) / 3);
+  near(c.positionEndAvgRub, (85400 + 11880 + 7.175 * 85) / 3);
 });
 
 // ---- spread is measured against the mid price, as the source sheet does ----

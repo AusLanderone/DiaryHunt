@@ -262,7 +262,7 @@ function tradeDetail(trade, c) {
   meta.append(
     item('Спред выход', pct2(c.exitSpread)),
     item('Спред итог', pct2(c.spreadTotal), signCls(c.spreadTotal)),
-    item('Позиция', `${rub0(c.positionStartRub)} → ${c.positionEndRub === null ? '—' : rub0(c.positionEndRub)}`),
+    item('Позиция на ногу', `${rub0(c.positionStartAvgRub)} → ${c.positionEndAvgRub === null ? '—' : rub0(c.positionEndAvgRub)}`),
     item('Курс', String(trade.usdRub || '—')),
     item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),
     item('PnL ₽', c.pnlRub == null ? '—' : F.fmtRub(c.pnlRub), signCls(c.pnlRub)),

@@ -271,25 +271,68 @@ try {
   });
   check('search narrows the journal to matching trades', filtered.afterSearch === 1, JSON.stringify(filtered));
 
-  // type is a first-class dimension, like the tag: a chip in the row and a filter
-  const typeUi = await page.evaluate(() => {
-    const sel = [...document.querySelectorAll('.journal-bar .sel')]
-      .find((s) => /все типы/i.test(s.options[0].textContent));
+  // tag, ticker and type each keep or drop trades; the picker says which
+  const pickerUi = await page.evaluate(() => {
+    const openPicker = (name) => {
+      const btn = [...document.querySelectorAll('.journal-bar .picker-btn')]
+        .find((b) => b.textContent.startsWith(name));
+      btn.click();
+      return document.querySelector('.picker-panel');
+    };
+    const rows = () => document.querySelectorAll('.trade-row').length;
+    const tickers = () => [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
+    const tickOff = (panel, value) => {
+      const row = [...panel.querySelectorAll('.picker-row')]
+        .find((r) => r.querySelector('.pv').textContent === value);
+      const cb = row.querySelector('input');
+      cb.checked = !cb.checked;
+      cb.dispatchEvent(new Event('change', { bubbles: true }));
+    };
     const chips = [...document.querySelectorAll('.trade-row .tag .tag-chip')].map((c) => c.textContent);
-    const before = document.querySelectorAll('.trade-row').length;
-    sel.value = 'Фьючи';
-    sel.dispatchEvent(new Event('change', { bubbles: true }));
-    const afterType = document.querySelectorAll('.trade-row').length;
-    const sel2 = [...document.querySelectorAll('.journal-bar .sel')]
-      .find((s) => /все типы/i.test(s.options[0].textContent));
-    sel2.value = 'all';
-    sel2.dispatchEvent(new Event('change', { bubbles: true }));
-    return { chips, before, afterType, options: [...sel.options].map((o) => o.textContent) };
+    const buttons = [...document.querySelectorAll('.journal-bar .picker-btn')].map((b) => b.textContent);
+    const before = rows();
+
+    // keep only ED
+    let panel = openPicker('Тикеры');
+    const values = [...panel.querySelectorAll('.picker-row .pv')].map((v) => v.textContent);
+    const counts = [...panel.querySelectorAll('.picker-row .pc')].map((c) => c.textContent);
+    tickOff(panel, 'ED');
+    const kept = tickers();
+    const keptLabel = [...document.querySelectorAll('.journal-bar .picker-btn')]
+      .find((b) => b.textContent.startsWith('Тикеры')).textContent;
+
+    // same choice, other mode: drop ED instead
+    panel = document.querySelector('.picker-panel')
+      || (document.querySelector('.journal-bar .picker-btn').click(), document.querySelector('.picker-panel'));
+    [...panel.querySelectorAll('.picker-modes .chip')].find((b) => /убрать/i.test(b.textContent)).click();
+    const dropped = tickers();
+    const droppedLabel = [...document.querySelectorAll('.journal-bar .picker-btn')]
+      .find((b) => b.textContent.startsWith('Тикеры')).textContent;
+
+    // reset brings everything back
+    [...document.querySelectorAll('.picker-panel .btn')].find((b) => /сбросить/i.test(b.textContent)).click();
+    const restored = rows();
+    document.body.click();   // fold the panel away
+    return { chips, buttons, before, values, counts, kept, keptLabel, dropped, droppedLabel, restored,
+      panelsOpen: document.querySelectorAll('.picker-panel').length };
   });
   check('type shows as a chip beside the tag',
-    typeUi.chips.includes('Фьючи') && typeUi.chips.includes('Схождение'), typeUi.chips.join('|'));
-  check('type has its own filter listing the types in use',
-    typeUi.options.includes('Фьючи') && typeUi.afterType === typeUi.before, JSON.stringify(typeUi));
+    pickerUi.chips.includes('Фьючи') && pickerUi.chips.includes('Схождение'), pickerUi.chips.join('|'));
+  check('tag, ticker and type each get a filter of their own',
+    ['Теги', 'Тикеры', 'Типы'].every((n) => pickerUi.buttons.some((b) => b.startsWith(n))),
+    pickerUi.buttons.join('|'));
+  check('a picker lists the values in use with their trade counts',
+    pickerUi.values.includes('ED') && pickerUi.values.includes('SILV') && pickerUi.counts.includes('1'),
+    JSON.stringify(pickerUi.values) + JSON.stringify(pickerUi.counts));
+  check('«Оставить» keeps only the ticked value',
+    pickerUi.kept.join() === 'ED' && /Тикеры: ED/.test(pickerUi.keptLabel),
+    `${pickerUi.kept.join('|')} — ${pickerUi.keptLabel}`);
+  check('«Убрать» hides it and keeps the rest',
+    pickerUi.dropped.join() === 'SILV' && /кроме ED/.test(pickerUi.droppedLabel),
+    `${pickerUi.dropped.join('|')} — ${pickerUi.droppedLabel}`);
+  check('«Сбросить» brings every trade back', pickerUi.restored === pickerUi.before,
+    `${pickerUi.restored} of ${pickerUi.before}`);
+  check('a click outside folds the picker away', pickerUi.panelsOpen === 0, String(pickerUi.panelsOpen));
   check('an empty result explains itself instead of showing a blank page',
     filtered.afterOpen === 0 && /ничего не подошло/i.test(filtered.emptyNote), JSON.stringify(filtered));
   check('clearing the filter brings every trade back', filtered.restored === 2, JSON.stringify(filtered));

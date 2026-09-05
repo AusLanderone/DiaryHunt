@@ -249,3 +249,51 @@ test('SORT_FIELDS name every sortable figure for the picker', () => {
     ['num', 'date', 'ticker', 'spread', 'profit', 'size', 'hold', 'ret']);
   assert.ok(jv.SORT_FIELDS.every((f) => f.label));
 });
+
+// ---------- keeping or dropping trades by tag / ticker / type ----------
+
+const many = () => [
+  trade({ num: 1, ticker: 'ED', tag: 'Схождение', type: 'Фьючи' }),
+  trade({ num: 2, ticker: 'SILV', tag: 'Раскор', type: 'Фьючи' }),
+  trade({ num: 3, ticker: 'BTC', tag: 'Схождение', type: 'Крипто' }),
+  trade({ num: 4, ticker: 'BTC', tag: '', type: 'Крипто' }),
+];
+
+test('filterTrades — include keeps only the chosen values', () => {
+  const f = { ...ALL, tag: { mode: 'include', values: ['Схождение'] } };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), f)), [1, 3]);
+});
+
+test('filterTrades — include accepts several values at once', () => {
+  const f = { ...ALL, ticker: { mode: 'include', values: ['ED', 'SILV'] } };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), f)), [1, 2]);
+});
+
+test('filterTrades — exclude drops the chosen values and keeps the rest', () => {
+  const f = { ...ALL, tag: { mode: 'exclude', values: ['Схождение'] } };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), f)), [2, 4]);
+});
+
+test('filterTrades — an empty selection means the filter is off', () => {
+  const off = { ...ALL, tag: { mode: 'exclude', values: [] }, ticker: { mode: 'include', values: [] } };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), off)), [1, 2, 3, 4]);
+});
+
+test('filterTrades — the dimensions narrow each other', () => {
+  const f = {
+    ...ALL,
+    ticker: { mode: 'include', values: ['BTC'] },
+    tag: { mode: 'exclude', values: ['Схождение'] },
+  };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), f)), [4]);
+});
+
+test('filterTrades — a trade with no tag can be picked out by an empty value', () => {
+  const f = { ...ALL, tag: { mode: 'include', values: [''] } };
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), f)), [4]);
+});
+
+test('filterTrades — the old single-value form still filters', () => {
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), { ...ALL, type: 'Крипто' })), [3, 4]);
+  assert.deepStrictEqual(nums(jv.filterTrades(many(), { ...ALL, type: 'all' })), [1, 2, 3, 4]);
+});

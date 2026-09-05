@@ -44,11 +44,23 @@ const usd2 = (n) => (n === null || n === undefined ? '—'
 
 // view state survives re-renders (adding a trade shouldn't reset the filters)
 const state = {
-  query: '', status: 'all', tag: 'all', type: 'all', period: 'all',
+  query: '', status: 'all', period: 'all',
+  // { mode: 'include' | 'exclude', values: [...] } — empty values = not filtering
+  tag: { mode: 'include', values: [] },
+  ticker: { mode: 'include', values: [] },
+  type: { mode: 'include', values: [] },
+  openPicker: null,                 // which filter panel is unfolded, if any
   sortKey: null, sortDir: 'desc',   // null = default order (newest trade first)
   expanded: new Set(),
 };
 let ctx = null;   // { container, trades, onEdit, onDelete }
+
+// a click anywhere else folds the open filter panel away
+document.addEventListener('click', () => {
+  if (!state.openPicker || !ctx) return;
+  state.openPicker = null;
+  renderJournal(ctx.container, ctx.trades, ctx);
+});
 
 const STATUSES = [['all', 'Все'], ['open', 'Открытые'], ['closed', 'Закрытые']];
 const PERIODS = [['all', 'Всё время'], ['year', 'Год'], ['quarter', 'Квартал'], ['month', 'Месяц']];
@@ -64,6 +76,101 @@ const COLUMNS = [
 ];
 
 const rerender = () => renderJournal(ctx.container, ctx.trades, ctx);
+
+// ---------- tag / ticker / type pickers ----------
+
+// Each dimension can keep only the values you tick, or drop them. The button
+// says which without opening the panel: «Теги: Схождение», «Теги: 2»,
+// «Теги: кроме 2».
+const DIMS = [
+  { key: 'tag', label: 'Теги', of: (t) => t.tag || '', blank: 'без тега' },
+  { key: 'ticker', label: 'Тикеры', of: (t) => t.ticker || '', blank: 'без тикера' },
+  { key: 'type', label: 'Типы', of: (t) => t.type || '', blank: 'без типа' },
+];
+
+const specOf = (key) => {
+  const s = state[key];
+  return s && typeof s === 'object' ? s : { mode: 'include', values: [] };
+};
+
+function setSpec(key, spec) {
+  state[key] = spec;
+  rerender();
+}
+
+function pickerLabel(dim, spec) {
+  const n = spec.values.length;
+  if (!n) return dim.label;
+  const what = n === 1 ? (spec.values[0] || dim.blank) : String(n);
+  return `${dim.label}: ${spec.mode === 'exclude' ? 'кроме ' : ''}${what}`;
+}
+
+// values actually present in the diary, with how many trades carry each
+function dimCounts(dim, trades) {
+  const counts = new Map();
+  trades.forEach((t) => {
+    const v = dim.of(t);
+    counts.set(v, (counts.get(v) || 0) + 1);
+  });
+  return [...counts.entries()].sort((a, b) => a[0].localeCompare(b[0], 'ru'));
+}
+
+function dimPicker(dim, trades) {
+  const spec = specOf(dim.key);
+  const box = el('div', 'picker');
+
+  const btn = el('button', 'chip picker-btn' + (spec.values.length ? ' active' : ''),
+    pickerLabel(dim, spec));
+  btn.title = `${dim.label}: оставить только выбранные или убрать их`;
+  btn.onclick = (e) => {
+    e.stopPropagation();
+    state.openPicker = state.openPicker === dim.key ? null : dim.key;
+    rerender();
+  };
+  box.appendChild(btn);
+  if (state.openPicker === dim.key) box.appendChild(pickerPanel(dim, trades, spec));
+  return box;
+}
+
+function pickerPanel(dim, trades, spec) {
+  const panel = el('div', 'picker-panel');
+  panel.onclick = (e) => e.stopPropagation();
+
+  const modes = el('div', 'picker-modes');
+  [['include', 'Оставить'], ['exclude', 'Убрать']].forEach(([mode, label]) => {
+    const b = el('button', 'chip mini' + (spec.mode === mode ? ' active' : ''), label);
+    b.title = mode === 'include' ? 'Показывать только отмеченные' : 'Прятать отмеченные';
+    b.onclick = () => setSpec(dim.key, { ...spec, mode });
+    modes.append(b);
+  });
+  panel.append(modes);
+
+  const list = el('div', 'picker-list');
+  const rows = dimCounts(dim, trades);
+  if (!rows.length) list.append(el('div', 'picker-empty', 'нет значений'));
+  rows.forEach(([value, count]) => {
+    const row = el('label', 'picker-row');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = spec.values.includes(value);
+    cb.onchange = () => setSpec(dim.key, {
+      ...spec,
+      values: cb.checked ? [...spec.values, value] : spec.values.filter((v) => v !== value),
+    });
+    row.append(cb, el('span', 'pv' + (value ? '' : ' blank'), value || dim.blank),
+      el('span', 'pc', String(count)));
+    list.append(row);
+  });
+  panel.append(list);
+
+  const reset = el('button', 'btn ghost mini', 'Сбросить');
+  reset.disabled = !spec.values.length;
+  reset.onclick = () => setSpec(dim.key, { mode: 'include', values: [] });
+  const foot = el('div', 'picker-foot');
+  foot.append(reset);
+  panel.append(foot);
+  return panel;
+}
 
 // ---------- filter bar ----------
 
@@ -85,19 +192,7 @@ function filterBar(trades) {
   });
   bar.appendChild(chips);
 
-  const tags = [...new Set(trades.map((t) => t.tag).filter(Boolean))].sort();
-  const tagSel = el('select', 'sel');
-  tagSel.append(new Option('Все теги', 'all'), ...tags.map((t) => new Option(t, t)));
-  tagSel.value = tags.includes(state.tag) ? state.tag : 'all';
-  tagSel.onchange = () => { state.tag = tagSel.value; rerender(); };
-  bar.appendChild(tagSel);
-
-  const types = [...new Set(trades.map((t) => t.type).filter(Boolean))].sort();
-  const typeSel = el('select', 'sel');
-  typeSel.append(new Option('Все типы', 'all'), ...types.map((t) => new Option(t, t)));
-  typeSel.value = types.includes(state.type) ? state.type : 'all';
-  typeSel.onchange = () => { state.type = typeSel.value; rerender(); };
-  bar.appendChild(typeSel);
+  DIMS.forEach((dim) => bar.appendChild(dimPicker(dim, trades)));
 
   const perSel = el('select', 'sel');
   perSel.append(...PERIODS.map(([k, l]) => new Option(l, k)));

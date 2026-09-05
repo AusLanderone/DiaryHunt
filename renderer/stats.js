@@ -275,91 +275,6 @@ function drawHistogram(canvas, bins) {
   canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
 }
 
-// ---------- waterfall: how gross becomes the net profit ----------
-
-// Each article moves the running balance; the last bar restates the balance
-// itself, so the eye can compare what was earned with what was kept.
-function waterfallBars(s) {
-  const steps = [
-    { label: 'Gross', delta: s.gross },
-    { label: 'Комиссии', delta: -s.fees },
-    { label: 'Payout', delta: s.payout },
-    { label: 'Свопы', delta: s.swap },
-    { label: 'Правка', delta: s.adjustment },
-  ].filter((step, i) => i === 0 || Math.abs(step.delta) > 0.005);
-
-  let run = 0;
-  const bars = steps.map((step) => {
-    const from = run;
-    run += step.delta;
-    return { ...step, from, to: run };
-  });
-  bars.push({ label: 'Чистый', delta: s.net, from: 0, to: s.net, isTotal: true });
-  return bars;
-}
-
-function drawWaterfall(canvas, s) {
-  const H = 260, padL = 56, padR = 16, padTop = 26, padBot = 34;
-  const pos = CSS('--pos') || '#46c46a';
-  const neg = CSS('--neg') || '#f26d78';
-  const accent = CSS('--accent') || '#4c8dff';
-  const muted = CSS('--muted') || '#8b95a6';
-  const text = CSS('--text') || '#e9edf3';
-  const bars = waterfallBars(s);
-
-  function render(hoverIdx) {
-    const { ctx, W } = setupCanvas(canvas, H);
-    const lo = Math.min(0, ...bars.map((b) => Math.min(b.from, b.to)));
-    const hi = Math.max(0, ...bars.map((b) => Math.max(b.from, b.to)));
-    const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min: lo, max: hi });
-    const slot = (W - padL - padR) / bars.length;
-    const bw = Math.min(56, slot * 0.55);
-    const cx = (i) => padL + slot * i + slot / 2;
-
-    // fees and swaps are tiny next to gross — floor their height so a cost that
-    // rounds to a pixel is still visible as a bar
-    const MIN_H = 6;
-    bars.forEach((b, i) => {
-      const y1 = y(b.from), y2 = y(b.to);
-      const drawn = Math.abs(y2 - y1);
-      const h = Math.max(MIN_H, drawn);
-      const top = b.to >= b.from ? Math.min(y1, y2) - (h - drawn) : Math.min(y1, y2);
-      ctx.fillStyle = b.isTotal ? accent : b.delta >= 0 ? pos : neg;
-      ctx.globalAlpha = hoverIdx === -1 || hoverIdx === i ? 1 : 0.55;
-      ctx.fillRect(cx(i) - bw / 2, top, bw, h);
-      ctx.globalAlpha = 1;
-
-      // dashed connector carrying the running balance into the next article
-      if (i < bars.length - 1 && !bars[i + 1].isTotal) {
-        ctx.strokeStyle = muted; ctx.globalAlpha = 0.45; ctx.setLineDash([3, 3]);
-        ctx.beginPath(); ctx.moveTo(cx(i) + bw / 2, y2); ctx.lineTo(cx(i + 1) - bw / 2, y2); ctx.stroke();
-        ctx.setLineDash([]); ctx.globalAlpha = 1;
-      }
-
-      ctx.fillStyle = text; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-      ctx.fillText(axisRub(b.isTotal ? b.to : b.delta), cx(i), top - 4);
-      ctx.fillStyle = muted; ctx.textBaseline = 'top';
-      ctx.fillText(b.label, cx(i), H - padBot + 8);
-    });
-
-    return { slot };
-  }
-
-  let geom = render(-1);
-  canvas.onmousemove = (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const idx = geom.slot ? Math.floor((mx - padL) / geom.slot) : -1;
-    if (idx < 0 || idx >= bars.length) { canvas.onmouseleave(); return; }
-    const b = bars[idx];
-    geom = render(idx);
-    const share = s.gross ? ` · ${pct(Math.abs(b.delta / s.gross), 1)} от gross` : '';
-    showTip(tipBody(b.label, b.isTotal ? b.to : b.delta,
-      b.isTotal ? 'итог после всех статей' : `вклад в результат${share}`), e);
-  };
-  canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
-}
-
 // ---------- calendar heatmap ----------
 
 const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
@@ -589,11 +504,6 @@ function renderStats(container, trades) {
   const cal = card('Календарь — профит по дням закрытия', 'wide');
   cal.appendChild(calendarWidget(an.calendarMap(closed)));
   grid.appendChild(cal);
-
-  // where the profit comes from: gross, then every article that eats into it
-  const wf = chartCard('Структура профита — от gross до чистого, ₽');
-  grid.appendChild(wf.box);
-  draw(() => drawWaterfall(wf.canvas, an.profitStructure(closed)));
 
   // breakdowns
   const byProfit = (a, b) => b.profit - a.profit;

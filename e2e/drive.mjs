@@ -275,15 +275,13 @@ try {
     monthRows: document.querySelectorAll('.mini-table tbody tr').length,
     metrics: [...document.querySelectorAll('.metric')].map((m) => m.innerText.replace(/\n/g, ': ')),
   }));
-  check('4 charts painted (equity, days, histogram, waterfall)',
-    widgets.canvases === 4 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
+  check('3 charts painted (equity, days, histogram)',
+    widgets.canvases === 3 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
   check('period chips rendered', widgets.chips.length === 4, widgets.chips.join('|'));
   check('calendar heatmap marks both close days', widgets.calCells === 2, `got ${widgets.calCells}`);
   check('spread / holding / capital / weekday panels present',
     ['спреду входа', 'времени удержания', 'объёму позиции', 'дню недели']
       .every((t) => widgets.panels.some((p) => p.toLowerCase().includes(t))), widgets.panels.join(' | '));
-  check('the profit structure waterfall is on the page',
-    widgets.panels.some((p) => /структура профита/i.test(p)), widgets.panels.join(' | '));
   check('the per-leg direction panels are gone',
     !widgets.panels.some((p) => /направлени/i.test(p)), widgets.panels.join(' | '));
   check('monthly table has a row per month', widgets.monthRows === 1, `got ${widgets.monthRows}`);
@@ -292,8 +290,8 @@ try {
   check('avg holding time metric shown', hasMetric(/время в сделке.*0,0 дн/i), widgets.metrics.join(' / '));
 
   const removed = await page.evaluate(() => document.querySelector('#view').innerText.toLowerCase());
-  check('removed widgets stay gone (streaks, drawdown, scatter)',
-    !/серия сейчас|макс. серии|макс. просадка|спред входа против/.test(removed), removed.slice(0, 200));
+  check('removed widgets stay gone (streaks, drawdown, waterfall, scatter)',
+    !/серия сейчас|макс. серии|макс. просадка|структура профита|спред входа против/.test(removed), removed.slice(0, 200));
 
   const layout = await page.evaluate(() => {
     const view = document.querySelector('#view');
@@ -312,7 +310,7 @@ try {
       metricsDisplay: getComputedStyle(document.querySelector('.metrics')).display,
     };
   });
-  check('every widget is a card in one grid', layout.cards === 12, JSON.stringify(layout));
+  check('every widget is a card in one grid', layout.cards === 11, JSON.stringify(layout));
   check('cards share rows instead of stacking one per line', layout.maxPerRow >= 2, JSON.stringify(layout));
   check('equity, calendar and the monthly table span the full row', layout.wide === 3, JSON.stringify(layout));
   check('metrics use the equal-tile grid', layout.metricsDisplay === 'grid', layout.metricsDisplay);
@@ -702,7 +700,7 @@ try {
   await page.waitForTimeout(400);
   const triStats = await page.evaluate(() => document.querySelector('#view').innerText);
   check('stats survive a three-leg trade', /закрытых сделок/i.test(triStats)
-    && /структура профита/i.test(triStats), triStats.slice(0, 120));
+    && /профит по тикеру/i.test(triStats), triStats.slice(0, 120));
   await page.evaluate(() => document.querySelector('#tab-journal').click());
 
 

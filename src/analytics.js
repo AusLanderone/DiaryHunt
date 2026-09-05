@@ -188,25 +188,6 @@ function capitalBuckets(trades, edges = CAPITAL_EDGES) {
   return buckets;
 }
 
-// ---------- where the profit actually comes from ----------
-
-// Every article that stands between the raw price move and what the diary
-// counts as profit, summed over the closed trades and expressed in ₽:
-// gross − fees + payout + swap + fix = net. `fees` is kept positive, as the
-// cost it is; the waterfall draws it downwards.
-function profitStructure(trades) {
-  const s = { gross: 0, fees: 0, payout: 0, swap: 0, adjustment: 0, net: 0 };
-  for (const t of closedOnly(trades)) {
-    for (const leg of t.legs) s.gross += calc.legGrossRub(leg, t.usdRub);
-    s.fees += calc.feeTotalRub(t);
-    s.payout += Number(t.payout || 0);
-    s.swap += calc.swapTotalRub(t);
-    s.adjustment += Number(t.adjustment || 0);
-  }
-  s.net = s.gross - s.fees + s.payout + s.swap + s.adjustment;
-  return s;
-}
-
 // mean net return on deployed capital across closed trades (fraction, e.g. 0.005 = 0,5%)
 function avgReturnPct(trades) {
   const pcts = closedOnly(trades).map((t) => calc.pnlNetPct(t)).filter((v) => v !== null);
@@ -231,7 +212,7 @@ const _api = {
   spreadBuckets,
   holdingDays, holdingBuckets,
   byMonth, byWeekday, calendarMap,
-  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct, profitStructure,
+  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct,
   filterByPeriod,
   MONTHS, WEEKDAYS,
 };

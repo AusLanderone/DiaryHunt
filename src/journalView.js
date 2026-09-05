@@ -44,13 +44,38 @@ function filterTrades(trades, filter = {}, now = new Date()) {
 
 // ---------- sorting ----------
 
+const DAY = 86400000;
+const asUTC = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return Date.UTC(y, m - 1, d); };
+
+// Days a trade was held. An open trade has no span yet, so null — those rows
+// sink to the bottom, the same way rows without a profit do.
+function heldDays(t) {
+  if (!t.openDate || !t.closeDate) return null;
+  return Math.round((asUTC(t.closeDate) - asUTC(t.openDate)) / DAY);
+}
+
 const SORT_VALUE = {
   num: (t) => t.num,
   date: (t) => t.openDate || '',
   ticker: (t) => (t.ticker || '').toLowerCase(),
   spread: (t) => calc.entrySpread(t),
   profit: (t) => (calc.isClosed(t) ? calc.netProfitRub(t) : null),
+  size: (t) => calc.positionStartAvgRub(t),
+  hold: (t) => heldDays(t),
+  ret: (t) => (calc.isClosed(t) ? calc.pnlNetPct(t) : null),
 };
+
+// what the sort picker offers, in the order it lists them
+const SORT_FIELDS = [
+  { key: 'num', label: '№ сделки' },
+  { key: 'date', label: 'Дата открытия' },
+  { key: 'ticker', label: 'Тикер' },
+  { key: 'spread', label: 'Спред входа' },
+  { key: 'profit', label: 'Чистый профит' },
+  { key: 'size', label: 'Объём на ногу' },
+  { key: 'hold', label: 'Время в сделке' },
+  { key: 'ret', label: 'Доходность, %' },
+];
 
 // Open trades have no profit to compare, so they always sit at the bottom
 // rather than flipping to the top when the direction changes.
@@ -121,7 +146,8 @@ function summarize(trades) {
   };
 }
 
-const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, MONTHS };
+const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, heldDays,
+  SORT_FIELDS, MONTHS };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.journalView = _api;
 })();

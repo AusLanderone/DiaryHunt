@@ -130,7 +130,9 @@ try {
       rows: rows.length,
       months: [...document.querySelectorAll('.month-head .m-name')].map((m) => m.textContent),
       firstRow: rows[0]?.innerText.replace(/\n/g, ' | '),
-      filters: [...document.querySelectorAll('.journal-bar .chip')].map((c) => c.textContent),
+      filters: [...document.querySelectorAll('.journal-bar .chips .chip')].map((c) => c.textContent),
+      sortOptions: [...document.querySelectorAll('.sort-control select option')].map((o) => o.textContent),
+      sortHints: document.querySelectorAll('.journal-head .arrow.hint').length,
       sortable: document.querySelectorAll('.journal-head .sortable').length,
       overflow: document.querySelector('.journal-scroll').scrollWidth
         - document.querySelector('.journal-scroll').clientWidth,
@@ -154,6 +156,11 @@ try {
     journal.firstRow);
   check('status filters and sortable headers are present',
     journal.filters.length === 3 && journal.sortable === 5, JSON.stringify(journal.filters));
+  check('the sort picker offers every sortable figure, columns and beyond',
+    journal.sortOptions.length === 9
+    && ['Объём на ногу', 'Время в сделке', 'Доходность'].every((l) => journal.sortOptions.some((o) => o.includes(l))),
+    journal.sortOptions.join('|'));
+  check('unsorted columns show they can be sorted', journal.sortHints === 5, String(journal.sortHints));
   check('journal never scrolls sideways', journal.overflow <= 0, `overflow ${journal.overflow}px`);
   check('footer summarises the visible trades', /сделок/i.test(journal.footer) && /винрейт/i.test(journal.footer), journal.footer);
 
@@ -178,6 +185,36 @@ try {
   check('third click clears the sort and drops the header highlight',
     sortCycle.cleared.join() === sortCycle.before.join() && sortCycle.activeAfterReset === 0,
     JSON.stringify(sortCycle));
+
+  // the picker sorts by figures no column shows, and the header follows it
+  const picker = await page.evaluate(() => {
+    const sel = document.querySelector('.sort-control select');
+    const dirBtn = document.querySelector('.sort-control .chip.dir');
+    const tickers = () => [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
+    const set = (value) => {
+      const s = document.querySelector('.sort-control select');
+      s.value = value;
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const dirDisabledAtRest = dirBtn.disabled;
+    set('size');
+    const bySize = tickers();
+    document.querySelector('.sort-control .chip.dir').click();
+    const reversed = tickers();
+    const activeHeader = [...document.querySelectorAll('.journal-head .active')].map((h) => h.textContent);
+    set('');
+    return { dirDisabledAtRest, bySize, reversed, activeHeader,
+      cleared: tickers(), picked: document.querySelector('.sort-control select').value };
+  });
+  check('the direction button waits until a field is picked', picker.dirDisabledAtRest === true,
+    String(picker.dirDisabledAtRest));
+  check('sorting by position size reorders the journal',
+    picker.bySize.join() === [...picker.reversed].reverse().join()
+    && picker.bySize.join() !== picker.reversed.join(), JSON.stringify(picker));
+  check('a picked field that has no column highlights no header',
+    picker.activeHeader.length === 0, picker.activeHeader.join('|'));
+  check('picking «по номеру» returns the default order',
+    picker.picked === '' && picker.cleared.join() === sortCycle.before.join(), JSON.stringify(picker));
 
   // expanding a trade reveals the per-leg numbers
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());
@@ -640,6 +677,75 @@ try {
   await page.evaluate(() => {
     [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent)).click();
   });
+
+  console.log('\n[7c] editing the dictionaries in the settings');
+  const tagBlock = `[...document.querySelectorAll('.dict-block')]
+    .find((b) => b.querySelector('.dict-name').textContent.trim() === 'Теги')`;
+  await page.evaluate(() => document.querySelector('#btn-settings').click());
+  await page.waitForSelector('.dicts .dict-block', { timeout: 8000 });
+  const dictUi = await page.evaluate(() => {
+    const block = (name) => [...document.querySelectorAll('.dict-block')]
+      .find((b) => b.querySelector('.dict-name').textContent.trim() === name);
+    const chips = (name) => [...block(name).querySelectorAll('.dict-list .dict-chip')]
+      .map((c) => c.textContent.trim());
+    return { names: [...document.querySelectorAll('.dict-name')].map((n) => n.textContent.trim()),
+      tags: chips('Теги'), tickers: chips('Тикеры') };
+  });
+  check('the settings list all four dictionaries',
+    ['Типы', 'Тикеры', 'Теги', 'Биржи'].every((n) => dictUi.names.includes(n)), dictUi.names.join('|'));
+  check('a dictionary lists the values the trades brought in',
+    dictUi.tickers.some((t) => t.startsWith('ED')), dictUi.tickers.join('|'));
+  check('a value carries how many trades use it',
+    dictUi.tags.some((t) => t.startsWith('Схождение') && t.includes('2')), dictUi.tags.join('|'));
+
+  // removing a value: it leaves the list, and the form stops offering it
+  await page.evaluate((sel) => {
+    const block = eval(sel);
+    const chip = [...block.querySelectorAll('.dict-chip')].find((c) => /Раскор/.test(c.textContent));
+    chip.querySelector('button').click();
+  }, tagBlock);
+  await page.waitForFunction((sel) => {
+    const block = eval(sel);
+    return ![...block.querySelectorAll('.dict-list .dict-chip')].some((c) => /Раскор/.test(c.textContent));
+  }, tagBlock, { timeout: 5000 });
+  const afterRemove = await page.evaluate((sel) => {
+    const block = eval(sel);
+    const hidden = block.querySelector('.dict-hidden');
+    return { chips: [...block.querySelectorAll('.dict-list .dict-chip')].map((c) => c.textContent.trim()),
+      hidden: hidden ? hidden.textContent : '' };
+  }, tagBlock);
+  check('a removed value leaves the list', !afterRemove.chips.some((c) => /Раскор/.test(c)),
+    afterRemove.chips.join('|'));
+  check('a removed value is kept under «убрано», one click from coming back',
+    /Раскор/.test(afterRemove.hidden), afterRemove.hidden);
+
+  await page.evaluate(() => {
+    [...document.querySelectorAll('.settings-modal .modal-buttons .btn')]
+      .find((b) => /готово/i.test(b.textContent)).click();
+  });
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const tagOptions = await page.evaluate(() => {
+    const opts = [...document.getElementById('dh-taglist').options].map((o) => o.value);
+    [...document.querySelectorAll('.modal-buttons .btn')].find((b) => /отмена/i.test(b.textContent)).click();
+    return opts;
+  });
+  check('the form stops offering a removed tag', !tagOptions.includes('Раскор'), tagOptions.join('|'));
+  check('a tag the trades still use is offered', tagOptions.includes('Схождение'), tagOptions.join('|'));
+
+  await page.evaluate(() => document.querySelector('#btn-settings').click());
+  await page.waitForSelector('.dicts .dict-block', { timeout: 8000 });
+  await page.evaluate((sel) => eval(sel).querySelector('.dict-hidden .dict-chip.ghost').click(), tagBlock);
+  await page.waitForFunction((sel) => [...eval(sel).querySelectorAll('.dict-list .dict-chip')]
+    .some((c) => /Раскор/.test(c.textContent)), tagBlock, { timeout: 5000 });
+  const restored = await page.evaluate(async () => {
+    const cfg = await window.api.config.get();
+    [...document.querySelectorAll('.settings-modal .modal-buttons .btn')]
+      .find((b) => /готово/i.test(b.textContent)).click();
+    return { tags: cfg.tags, hidden: cfg.hidden.tags };
+  });
+  check('restoring puts the value back and clears it from hidden',
+    restored.tags.includes('Раскор') && !restored.hidden.includes('Раскор'), JSON.stringify(restored));
 
   console.log('\n[8] a three-leg trade');
   // synthetic USD/CNH from MOEX (SI ÷ CR) against the market cross

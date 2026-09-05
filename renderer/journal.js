@@ -105,7 +105,40 @@ function filterBar(trades) {
   perSel.onchange = () => { state.period = perSel.value; rerender(); };
   bar.appendChild(perSel);
 
+  bar.appendChild(sortControl());
   return bar;
+}
+
+// The column headers sort too, but nothing on them says so until you hover, and
+// the picker also reaches figures that have no column of their own.
+function sortControl() {
+  const box = el('div', 'sort-control');
+
+  const sel = el('select', 'sel');
+  sel.append(new Option('Сортировка: по номеру', ''),
+    ...V().SORT_FIELDS.map((f) => new Option('Сортировка: ' + f.label, f.key)));
+  sel.value = state.sortKey || '';
+  sel.title = 'По чему сортировать журнал — то же, что клик по заголовку колонки';
+  sel.onchange = () => {
+    const key = sel.value;
+    // nextSort knows each field's natural direction (tickers read A→Я, money ↓)
+    const next = key ? V().nextSort({ key: null, dir: 'desc' }, key) : { key: null, dir: 'desc' };
+    state.sortKey = next.key;
+    state.sortDir = next.dir;
+    rerender();
+  };
+  box.appendChild(sel);
+
+  const dir = el('button', 'chip dir' + (state.sortKey ? '' : ' muted'),
+    state.sortDir === 'asc' ? '↑' : '↓');
+  dir.title = state.sortKey
+    ? (state.sortDir === 'asc' ? 'По возрастанию — клик развернёт' : 'По убыванию — клик развернёт')
+    : 'Сначала выберите, по чему сортировать';
+  dir.disabled = !state.sortKey;
+  dir.onclick = () => { state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc'; rerender(); };
+  box.appendChild(dir);
+
+  return box;
 }
 
 // ---------- sortable header ----------
@@ -120,6 +153,9 @@ function header() {
       if (state.sortKey === col.key) {
         cell.classList.add('active');
         cell.append(el('span', 'arrow', state.sortDir === 'asc' ? '▲' : '▼'));
+      } else {
+        // a pale ⇅ so the column reads as sortable before anyone hovers it
+        cell.append(el('span', 'arrow hint', '⇅'));
       }
       cell.title = state.sortKey === col.key
         ? 'Ещё клик — сбросить сортировку'

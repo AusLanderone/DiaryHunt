@@ -157,10 +157,11 @@ function profitHistogram(profits, bins = 8) {
   return out;
 }
 
-// total entry value of both legs, in ₽
+// total entry value of every leg, in ₽. Each leg converts by its own price
+// currency — multiplying the whole sum by the rate inflated rouble-quoted legs
+// (SI, CR) by the rate itself and threw them into the top capital band.
 function capitalDeployed(trade) {
-  const usd = trade.legs.reduce((s, leg) => s + calc.legPositionStart(leg), 0);
-  return usd * Number(trade.usdRub);
+  return calc.positionStartRub(trade);
 }
 
 const CAPITAL_EDGES = [1e6, 3e6, 1e7];
@@ -182,6 +183,25 @@ function capitalBuckets(trades, edges = CAPITAL_EDGES) {
     b.profit += np; b.count += 1; if (np > 0) b.wins += 1;
   }
   return buckets;
+}
+
+// ---------- where the profit actually comes from ----------
+
+// Every article that stands between the raw price move and what the diary
+// counts as profit, summed over the closed trades and expressed in ₽:
+// gross − fees + payout + swap + fix = net. `fees` is kept positive, as the
+// cost it is; the waterfall draws it downwards.
+function profitStructure(trades) {
+  const s = { gross: 0, fees: 0, payout: 0, swap: 0, adjustment: 0, net: 0 };
+  for (const t of closedOnly(trades)) {
+    for (const leg of t.legs) s.gross += calc.legGrossRub(leg, t.usdRub);
+    s.fees += calc.feeTotalRub(t);
+    s.payout += Number(t.payout || 0);
+    s.swap += calc.swapTotalRub(t);
+    s.adjustment += Number(t.adjustment || 0);
+  }
+  s.net = s.gross - s.fees + s.payout + s.swap + s.adjustment;
+  return s;
 }
 
 // mean net return on deployed capital across closed trades (fraction, e.g. 0.005 = 0,5%)
@@ -208,7 +228,7 @@ const _api = {
   spreadBuckets,
   holdingDays, holdingBuckets,
   byMonth, byWeekday, calendarMap,
-  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct,
+  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct, profitStructure,
   filterByPeriod,
   MONTHS, WEEKDAYS,
 };

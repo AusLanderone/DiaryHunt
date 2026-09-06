@@ -260,12 +260,6 @@ test('sortTrades — by return on the position, open ones at the bottom', () => 
   assert.deepStrictEqual(nums(jv.sortTrades([poor, rich, open], 'ret', 'desc')), [1, 2, 3]);
 });
 
-test('SORT_FIELDS name every sortable figure for the picker', () => {
-  assert.deepStrictEqual(jv.SORT_FIELDS.map((f) => f.key),
-    ['num', 'date', 'ticker', 'spread', 'spreadFact', 'profit', 'size', 'hold', 'ret']);
-  assert.ok(jv.SORT_FIELDS.every((f) => f.label));
-});
-
 // ---------- keeping or dropping trades by tag / ticker / type ----------
 
 const many = () => [

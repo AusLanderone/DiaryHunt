@@ -70,6 +70,17 @@ function spreadTotal(trade) {
   return en - ex;
 }
 
+// The spread the trade actually collected, as the trade itself reads: the size
+// is the entry-to-exit difference, the sign is the trade's result. A trade
+// closed in profit collected a plus even when the spread widened against the
+// leg order (that direction lives in spreadTotal), a losing one a minus.
+function spreadCollected(trade) {
+  const diff = spreadTotal(trade);
+  const profit = netProfitRub(trade);
+  if (diff === null || profit === null) return null;
+  return profit < 0 ? -Math.abs(diff) : Math.abs(diff);
+}
+
 function grossTotal(trade) {
   let sum = 0;
   for (const leg of trade.legs) {
@@ -224,6 +235,7 @@ function computeTrade(trade) {
     entrySpread: entrySpread(trade),
     exitSpread: exitSpread(trade),
     spreadTotal: spreadTotal(trade),
+    spreadCollected: spreadCollected(trade),
     grossTotal: grossTotal(trade),
     feeTotalRub: feeTotalRub(trade),
     pnlNet: pnlNet(trade),
@@ -242,7 +254,7 @@ function computeTrade(trade) {
 
 const _api = {
   legPositionStart, legPositionEnd, legGross,
-  entrySpread, exitSpread, spreadTotal, legRole, spreadFormula,
+  entrySpread, exitSpread, spreadTotal, spreadCollected, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   positionStartAvgRub, positionEndAvgRub,

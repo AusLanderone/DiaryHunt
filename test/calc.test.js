@@ -354,3 +354,21 @@ test('spread total needs both ends — a missing entry price is not a closed spr
   const noExit = { ...trade1, legs: trade1.legs.map((l, i) => (i ? l : { ...l, exitPrice: '' })) };
   assert.strictEqual(calc.spreadTotal(noExit), null);
 });
+
+// The collected spread reads as the trade reads: a trade closed in profit
+// collected a plus, one closed in a loss a minus — whichever way the spread
+// itself moved. The size is still the entry-to-exit difference.
+test('spread collected — the sign follows the net profit, not the leg order', () => {
+  near(calc.spreadCollected(trade1), 0.000419, 1e-5);       // profit, positive difference
+  assert.ok(calc.netProfitRub(trade3) > 0, 'trade 3 closes in profit');
+  near(calc.spreadCollected(trade3), 0.00113, 1e-4);        // profit, though entry - exit < 0
+  const losing = { ...trade1, payout: -20000 };
+  assert.ok(calc.netProfitRub(losing) < 0, 'the fixture must close in a loss');
+  near(calc.spreadCollected(losing), -0.000419, 1e-5);
+});
+
+test('spread collected — nothing to show while a trade is open or half filled', () => {
+  assert.strictEqual(calc.spreadCollected(tradeOpen), null);
+  const noEntry = { ...trade1, legs: trade1.legs.map((l, i) => (i ? l : { ...l, entryPrice: '' })) };
+  assert.strictEqual(calc.spreadCollected(noEntry), null);
+});

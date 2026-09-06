@@ -47,3 +47,13 @@ test('csv — a leg row carries its role and price currency', () => {
   assert.ok(first.includes('mul') && first.includes('RUB'), first);
   assert.ok(second.includes('div') && second.includes('USD'), second);
 });
+
+test('csv — the collected spread rides along with the entry/exit spreads', () => {
+  const rows = tradesToCsv([trade1]).trim().split('\n');
+  const head = rows[0].split(',');
+  const i = head.indexOf('Спред собран');
+  assert.ok(i > head.indexOf('Спред итог'), 'the column is there, after the directional total');
+  const cells = rows[1].split(',');
+  assert.ok(Number(cells[i]) > 0, `collected spread ${cells[i]} must be positive on a winning trade`);
+  assert.strictEqual(rows[2].split(',')[i], '');   // trade-level, so only the first leg row carries it
+});

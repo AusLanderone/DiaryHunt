@@ -73,8 +73,9 @@ const SORT_VALUE = {
   date: (t) => t.openDate || '',
   ticker: (t) => (t.ticker || '').toLowerCase(),
   spread: (t) => calc.entrySpread(t),
-  // the spread the trade actually closed — open trades have none yet
-  spreadFact: (t) => (calc.isClosed(t) ? calc.spreadTotal(t) : null),
+  // the spread the trade actually collected, signed by its result — open trades
+  // have none yet
+  spreadFact: (t) => (calc.isClosed(t) ? calc.spreadCollected(t) : null),
   profit: (t) => (calc.isClosed(t) ? calc.netProfitRub(t) : null),
   size: (t) => calc.positionStartAvgRub(t),
   hold: (t) => heldDays(t),

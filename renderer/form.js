@@ -200,7 +200,7 @@ async function openForm(trade, onSaved) {
     live.append(
       item('Вход спред', F.fmtPct(c.entrySpread) || '—'),
       item('Спред выход', F.fmtPct(c.exitSpread) || '—'),
-      item('Спред итог', F.fmtPct(c.spreadTotal) || '—'),
+      item('Спред собран', F.fmtPct(c.spreadCollected) || '—'),
       item('Позиция на ногу', `${rub0(c.positionStartAvgRub)} → ${rub0(c.positionEndAvgRub)}`),
       item('PnL net', F.fmtUsd(c.pnlNet) || '—', sc(c.pnlNet)),
       item('Своп', F.fmtRub(c.swapTotalRub), sc(c.swapTotalRub)),

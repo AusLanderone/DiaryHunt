@@ -124,6 +124,10 @@ test('sortTrades — by the spread actually closed, open trades at the bottom', 
   const open = trade({ num: 3, open: true });
   assert.deepStrictEqual(nums(jv.sortTrades([stuck, collected, open], 'spreadFact', 'desc')), [1, 2, 3]);
   assert.deepStrictEqual(nums(jv.sortTrades([stuck, collected, open], 'spreadFact', 'asc')), [2, 1, 3]);
+
+  // the same spread difference, but the trade closed in a loss — it sorts below
+  const lost = trade({ num: 4, payout: -5000 });
+  assert.deepStrictEqual(nums(jv.sortTrades([lost, collected], 'spreadFact', 'desc')), [1, 4]);
 });
 
 test('groupByMonth — newest month first, with its own count and total', () => {

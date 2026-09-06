@@ -163,12 +163,12 @@ try {
     && ['Объём на ногу', 'Время в сделке', 'Доходность'].every((l) => journal.sortOptions.some((o) => o.includes(l))),
     journal.sortOptions.join('|'));
   check('unsorted columns show they can be sorted', journal.sortHints === 6, String(journal.sortHints));
-  // trade #1 collected 0.1904% - 0.1484% = 0.0419% -> +0,04%; trade #3 -0,12%
-  check('closed rows show the spread actually collected, signed',
+  // #1 collected 0.1904% - 0.1484% = 0.0419%; #3 moved 0.1150% and both closed
+  // in profit, so both read as a plus whichever way their spread went
+  check('closed rows show the spread actually collected, signed by the result',
     journal.spreadFacts.length === 2
-    && journal.spreadFacts.every((v) => /^[+−-]\d+,\d{2}%$/.test(v.trim()))
     && journal.spreadFacts.some((v) => v.trim() === '+0,04%')
-    && journal.spreadFacts.some((v) => v.trim() === '-0,12%'),
+    && journal.spreadFacts.some((v) => v.trim() === '+0,12%'),
     journal.spreadFacts.join('|'));
   check('journal never scrolls sideways', journal.overflow <= 0, `overflow ${journal.overflow}px`);
   check('footer summarises the visible trades', /сделок/i.test(journal.footer) && /винрейт/i.test(journal.footer), journal.footer);
@@ -258,7 +258,7 @@ try {
     `${posSize.shown} (leg ${posSize.avg}, both ${posSize.sum})`);
 
   check('expanded detail carries exit spread, total spread and position value',
-    /Спред выход/i.test(detail) && /Спред итог/i.test(detail)
+    /Спред выход/i.test(detail) && /Спред собран/i.test(detail)
     && /Позиция/i.test(detail) && /\$[\d\s]+ → \$[\d\s]+/.test(detail), detail);
   await page.screenshot({ path: path.join(SHOT, '02b-journal-expanded.png') });
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());

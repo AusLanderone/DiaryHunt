@@ -320,11 +320,12 @@ function tradeRow(trade, c) {
   spread.append(el('span', 'sp-out' + (closed ? '' : ' muted'), closed ? pct2(c.exitSpread) : '—'));
   row.append(spread);
 
-  // what the trade actually collected: entry spread minus what was left at the exit
+  // what the trade actually collected: the entry-to-exit difference, plus when
+  // the trade closed in profit, minus when it closed in a loss
   const fact = el('div', 'jc spread-fact');
-  if (closed && c.spreadTotal !== null) {
-    const badge = el('span', 'sp-fact ' + signCls(c.spreadTotal), pctSigned(c.spreadTotal));
-    badge.title = 'Фактически собранный спред: вход − выход';
+  if (closed && c.spreadCollected !== null) {
+    const badge = el('span', 'sp-fact ' + signCls(c.spreadCollected), pctSigned(c.spreadCollected));
+    badge.title = 'Фактически собранный спред: разница вход → выход, со знаком результата сделки';
     fact.append(badge);
   } else {
     fact.append(el('span', 'sp-fact none', '—'));
@@ -407,7 +408,7 @@ function tradeDetail(trade, c) {
   };
   meta.append(
     item('Спред выход', pct2(c.exitSpread)),
-    item('Спред итог', pct2(c.spreadTotal), signCls(c.spreadTotal)),
+    item('Спред собран', pct2(c.spreadCollected), signCls(c.spreadCollected)),
     item('Позиция на ногу', `${rub0(c.positionStartAvgRub)} → ${c.positionEndAvgRub === null ? '—' : rub0(c.positionEndAvgRub)}`),
     item('Курс', String(trade.usdRub || '—')),
     item('PnL net', c.pnlNet == null ? '—' : F.fmtUsd(c.pnlNet), signCls(c.pnlNet)),

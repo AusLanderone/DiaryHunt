@@ -211,13 +211,6 @@ header {
 .picker-foot .btn:disabled { opacity: .45; cursor: default; }
 
 /* sort picker: the visible twin of clicking a column header */
-.journal-bar .sort-control { display: flex; align-items: center; gap: 6px; }
-.journal-bar .chip.dir {
-  min-width: 30px;
-  font-family: var(--mono); font-size: 13px; line-height: 1;
-}
-.journal-bar .chip.dir:disabled { opacity: .45; cursor: default; }
-
 /* sortable column header */
 .journal-head {
   flex: none;

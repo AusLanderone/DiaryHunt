@@ -82,19 +82,6 @@ const SORT_VALUE = {
   ret: (t) => (calc.isClosed(t) ? calc.pnlNetPct(t) : null),
 };
 
-// what the sort picker offers, in the order it lists them
-const SORT_FIELDS = [
-  { key: 'num', label: '№ сделки' },
-  { key: 'date', label: 'Дата открытия' },
-  { key: 'ticker', label: 'Тикер' },
-  { key: 'spread', label: 'Спред входа' },
-  { key: 'spreadFact', label: 'Спред собран' },
-  { key: 'profit', label: 'Чистый профит' },
-  { key: 'size', label: 'Объём на ногу' },
-  { key: 'hold', label: 'Время в сделке' },
-  { key: 'ret', label: 'Доходность, %' },
-];
-
 // Open trades have no profit to compare, so they always sit at the bottom
 // rather than flipping to the top when the direction changes.
 function sortTrades(trades, key = 'num', dir = 'desc') {
@@ -164,8 +151,7 @@ function summarize(trades) {
   };
 }
 
-const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, heldDays,
-  SORT_FIELDS, MONTHS };
+const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, heldDays, MONTHS };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.journalView = _api;
 })();

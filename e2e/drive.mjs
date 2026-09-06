@@ -131,7 +131,6 @@ try {
       months: [...document.querySelectorAll('.month-head .m-name')].map((m) => m.textContent),
       firstRow: rows[0]?.innerText.replace(/\n/g, ' | '),
       filters: [...document.querySelectorAll('.journal-bar .chips .chip')].map((c) => c.textContent),
-      sortOptions: [...document.querySelectorAll('.sort-control select option')].map((o) => o.textContent),
       sortHints: document.querySelectorAll('.journal-head .arrow.hint').length,
       sortable: document.querySelectorAll('.journal-head .sortable').length,
       // the spread each closed trade actually collected, one badge per row
@@ -158,10 +157,6 @@ try {
     journal.firstRow);
   check('status filters and sortable headers are present',
     journal.filters.length === 3 && journal.sortable === 6, JSON.stringify(journal.filters));
-  check('the sort picker offers every sortable figure, columns and beyond',
-    journal.sortOptions.length === 10
-    && ['Объём на ногу', 'Время в сделке', 'Доходность'].every((l) => journal.sortOptions.some((o) => o.includes(l))),
-    journal.sortOptions.join('|'));
   check('unsorted columns show they can be sorted', journal.sortHints === 6, String(journal.sortHints));
   // #1 collected 0.1904% - 0.1484% = 0.0419%; #3 moved 0.1150% and both closed
   // in profit, so both read as a plus whichever way their spread went
@@ -195,35 +190,10 @@ try {
     sortCycle.cleared.join() === sortCycle.before.join() && sortCycle.activeAfterReset === 0,
     JSON.stringify(sortCycle));
 
-  // the picker sorts by figures no column shows, and the header follows it
-  const picker = await page.evaluate(() => {
-    const sel = document.querySelector('.sort-control select');
-    const dirBtn = document.querySelector('.sort-control .chip.dir');
-    const tickers = () => [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
-    const set = (value) => {
-      const s = document.querySelector('.sort-control select');
-      s.value = value;
-      s.dispatchEvent(new Event('change', { bubbles: true }));
-    };
-    const dirDisabledAtRest = dirBtn.disabled;
-    set('size');
-    const bySize = tickers();
-    document.querySelector('.sort-control .chip.dir').click();
-    const reversed = tickers();
-    const activeHeader = [...document.querySelectorAll('.journal-head .active')].map((h) => h.textContent);
-    set('');
-    return { dirDisabledAtRest, bySize, reversed, activeHeader,
-      cleared: tickers(), picked: document.querySelector('.sort-control select').value };
-  });
-  check('the direction button waits until a field is picked', picker.dirDisabledAtRest === true,
-    String(picker.dirDisabledAtRest));
-  check('sorting by position size reorders the journal',
-    picker.bySize.join() === [...picker.reversed].reverse().join()
-    && picker.bySize.join() !== picker.reversed.join(), JSON.stringify(picker));
-  check('a picked field that has no column highlights no header',
-    picker.activeHeader.length === 0, picker.activeHeader.join('|'));
-  check('picking «по номеру» returns the default order',
-    picker.picked === '' && picker.cleared.join() === sortCycle.before.join(), JSON.stringify(picker));
+  // the sort picker is gone — the column headers are the only way to sort
+  const pickerGone = await page.evaluate(() =>
+    !document.querySelector('.sort-control') && !document.querySelector('.journal-bar .chip.dir'));
+  check('the journal bar carries no sort picker', pickerGone === true, String(pickerGone));
 
   // expanding a trade reveals the per-leg numbers
   await page.evaluate(() => document.querySelectorAll('.trade-row')[0].click());

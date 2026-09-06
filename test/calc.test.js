@@ -345,3 +345,12 @@ test('entrySpread — a symmetric measure: swapping the legs only flips the sign
   ] };
   near(calc.entrySpread(flipped), -calc.entrySpread(sheet3), 1e-12);
 });
+
+// The journal now prints the closed spread on every closed row, so a half-filled
+// trade must not read as "the whole spread was collected".
+test('spread total needs both ends — a missing entry price is not a closed spread', () => {
+  const noEntry = { ...trade1, legs: trade1.legs.map((l, i) => (i ? l : { ...l, entryPrice: '' })) };
+  assert.strictEqual(calc.spreadTotal(noEntry), null);
+  const noExit = { ...trade1, legs: trade1.legs.map((l, i) => (i ? l : { ...l, exitPrice: '' })) };
+  assert.strictEqual(calc.spreadTotal(noExit), null);
+});

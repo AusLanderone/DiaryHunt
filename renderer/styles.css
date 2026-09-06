@@ -150,7 +150,7 @@ header {
 /* One grid definition drives both the header and every trade row, so the
    columns stay locked together without a <table>. */
 .journal {
-  --jcols: 46px 108px 84px 196px minmax(132px, 1fr) 186px 152px 104px;
+  --jcols: 46px 108px 84px 190px minmax(120px, 1fr) 176px 84px 148px 100px;
   display: flex; flex-direction: column; height: 100%;
 }
 
@@ -328,6 +328,20 @@ header {
 .trade-row .spread .sp-arrow { color: var(--muted-2); }
 .trade-row .spread .sp-out { color: var(--muted); }
 .trade-row .spread .sp-out.muted { color: var(--muted-2); }
+
+/* what the trade actually collected — the spread it closed, entry minus exit */
+.trade-row .spread-fact { justify-content: flex-end; }
+.trade-row .sp-fact {
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; font-weight: 600;
+  white-space: nowrap;
+}
+.trade-row .sp-fact.pos { color: var(--pos); background: color-mix(in srgb, var(--pos) 14%, var(--surface-2)); }
+.trade-row .sp-fact.neg { color: var(--neg); background: color-mix(in srgb, var(--neg) 14%, var(--surface-2)); }
+.trade-row .sp-fact.none { background: transparent; color: var(--muted-2); font-weight: 400; }
 
 .trade-row .money { justify-content: flex-end; }
 .trade-row .money .sum {

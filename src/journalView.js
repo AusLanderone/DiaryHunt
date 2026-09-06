@@ -73,6 +73,8 @@ const SORT_VALUE = {
   date: (t) => t.openDate || '',
   ticker: (t) => (t.ticker || '').toLowerCase(),
   spread: (t) => calc.entrySpread(t),
+  // the spread the trade actually closed — open trades have none yet
+  spreadFact: (t) => (calc.isClosed(t) ? calc.spreadTotal(t) : null),
   profit: (t) => (calc.isClosed(t) ? calc.netProfitRub(t) : null),
   size: (t) => calc.positionStartAvgRub(t),
   hold: (t) => heldDays(t),
@@ -85,6 +87,7 @@ const SORT_FIELDS = [
   { key: 'date', label: 'Дата открытия' },
   { key: 'ticker', label: 'Тикер' },
   { key: 'spread', label: 'Спред входа' },
+  { key: 'spreadFact', label: 'Спред собран' },
   { key: 'profit', label: 'Чистый профит' },
   { key: 'size', label: 'Объём на ногу' },
   { key: 'hold', label: 'Время в сделке' },

@@ -134,6 +134,8 @@ try {
       sortOptions: [...document.querySelectorAll('.sort-control select option')].map((o) => o.textContent),
       sortHints: document.querySelectorAll('.journal-head .arrow.hint').length,
       sortable: document.querySelectorAll('.journal-head .sortable').length,
+      // the spread each closed trade actually collected, one badge per row
+      spreadFacts: [...document.querySelectorAll('.trade-row .sp-fact')].map((b) => b.textContent),
       overflow: document.querySelector('.journal-scroll').scrollWidth
         - document.querySelector('.journal-scroll').clientWidth,
       footer: document.querySelector('.journal-total .lbl').innerText.replace(/\n/g, ' '),
@@ -155,12 +157,19 @@ try {
     && /MOEX/.test(journal.firstRow) && /%/.test(journal.firstRow) && /₽/.test(journal.firstRow),
     journal.firstRow);
   check('status filters and sortable headers are present',
-    journal.filters.length === 3 && journal.sortable === 5, JSON.stringify(journal.filters));
+    journal.filters.length === 3 && journal.sortable === 6, JSON.stringify(journal.filters));
   check('the sort picker offers every sortable figure, columns and beyond',
-    journal.sortOptions.length === 9
+    journal.sortOptions.length === 10
     && ['Объём на ногу', 'Время в сделке', 'Доходность'].every((l) => journal.sortOptions.some((o) => o.includes(l))),
     journal.sortOptions.join('|'));
-  check('unsorted columns show they can be sorted', journal.sortHints === 5, String(journal.sortHints));
+  check('unsorted columns show they can be sorted', journal.sortHints === 6, String(journal.sortHints));
+  // trade #1 collected 0.1904% - 0.1484% = 0.0419% -> +0,04%; trade #3 -0,12%
+  check('closed rows show the spread actually collected, signed',
+    journal.spreadFacts.length === 2
+    && journal.spreadFacts.every((v) => /^[+−-]\d+,\d{2}%$/.test(v.trim()))
+    && journal.spreadFacts.some((v) => v.trim() === '+0,04%')
+    && journal.spreadFacts.some((v) => v.trim() === '-0,12%'),
+    journal.spreadFacts.join('|'));
   check('journal never scrolls sideways', journal.overflow <= 0, `overflow ${journal.overflow}px`);
   check('footer summarises the visible trades', /сделок/i.test(journal.footer) && /винрейт/i.test(journal.footer), journal.footer);
 

@@ -114,6 +114,18 @@ test('sortTrades — by entry spread', () => {
   assert.deepStrictEqual(nums(jv.sortTrades([narrow, wide], 'spread', 'desc')), [1, 2]);
 });
 
+test('sortTrades — by the spread actually closed, open trades at the bottom', () => {
+  // entry 1%, exit 0% -> collected 1%
+  const collected = trade({ num: 1 });
+  // entry 1%, exit 0,99% -> almost nothing collected
+  const stuck = trade({ num: 2 });
+  stuck.legs[1].exitPrice = 101;
+  stuck.legs[0].exitPrice = 100;
+  const open = trade({ num: 3, open: true });
+  assert.deepStrictEqual(nums(jv.sortTrades([stuck, collected, open], 'spreadFact', 'desc')), [1, 2, 3]);
+  assert.deepStrictEqual(nums(jv.sortTrades([stuck, collected, open], 'spreadFact', 'asc')), [2, 1, 3]);
+});
+
 test('groupByMonth — newest month first, with its own count and total', () => {
   const groups = jv.groupByMonth([
     trade({ num: 1, openDate: '2026-07-05', closeDate: '2026-07-06', payout: 100 }),
@@ -246,7 +258,7 @@ test('sortTrades — by return on the position, open ones at the bottom', () => 
 
 test('SORT_FIELDS name every sortable figure for the picker', () => {
   assert.deepStrictEqual(jv.SORT_FIELDS.map((f) => f.key),
-    ['num', 'date', 'ticker', 'spread', 'profit', 'size', 'hold', 'ret']);
+    ['num', 'date', 'ticker', 'spread', 'spreadFact', 'profit', 'size', 'hold', 'ret']);
   assert.ok(jv.SORT_FIELDS.every((f) => f.label));
 });
 

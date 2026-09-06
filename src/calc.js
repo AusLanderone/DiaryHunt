@@ -60,10 +60,14 @@ function spreadFormula(trade) {
     .join(' ');
 }
 
+// How much of the spread the trade actually collected: what it entered on minus
+// what was left at the exit. Both ends have to be there — a trade with a price
+// missing on either side has no closed spread, not a spread of its other half.
 function spreadTotal(trade) {
+  const en = entrySpread(trade);
   const ex = exitSpread(trade);
-  if (ex === null) return null;
-  return entrySpread(trade) - ex;
+  if (en === null || ex === null) return null;
+  return en - ex;
 }
 
 function grossTotal(trade) {

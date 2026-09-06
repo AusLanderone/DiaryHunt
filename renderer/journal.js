@@ -31,6 +31,9 @@ const price = (n) => (n === null || n === undefined || n === '' ? '—'
   : Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 5 }));
 const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
   : (n * 100).toFixed(2).replace('.', ',') + '%');
+// the collected spread reads as a gain or a loss, so it carries its sign
+const pctSigned = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
+  : (n > 0 ? '+' : '') + pct2(n));
 const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
 // whole dollars for position-sized numbers, two decimals for small ones
 const usd0 = (n) => {
@@ -71,6 +74,7 @@ const COLUMNS = [
   { label: 'Тип · Тег' },
   { label: 'Ноги' },
   { key: 'spread', label: 'Спред вход → выход', sortable: true, right: true },
+  { key: 'spreadFact', label: 'Собран', sortable: true, right: true },
   { key: 'profit', label: 'Чистый', sortable: true, right: true },
   { label: '' },
 ];
@@ -315,6 +319,17 @@ function tradeRow(trade, c) {
   spread.append(el('span', 'sp-arrow', '→'));
   spread.append(el('span', 'sp-out' + (closed ? '' : ' muted'), closed ? pct2(c.exitSpread) : '—'));
   row.append(spread);
+
+  // what the trade actually collected: entry spread minus what was left at the exit
+  const fact = el('div', 'jc spread-fact');
+  if (closed && c.spreadTotal !== null) {
+    const badge = el('span', 'sp-fact ' + signCls(c.spreadTotal), pctSigned(c.spreadTotal));
+    badge.title = 'Фактически собранный спред: вход − выход';
+    fact.append(badge);
+  } else {
+    fact.append(el('span', 'sp-fact none', '—'));
+  }
+  row.append(fact);
 
   const money = el('div', 'jc money');
   if (closed) money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));

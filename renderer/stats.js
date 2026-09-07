@@ -668,14 +668,15 @@ async function saveOrder(next) {
 const WS = () => window.widgetSize;
 let cardSizes = null;
 
-const sizes = () => (cardSizes || (cardSizes = WS().normalize((window.appSettings || {}).widgetSize)));
+const sizes = () => (cardSizes || (cardSizes = WS().normalize(
+  (window.appSettings || {}).widgetSize, (window.appSettings || {}).widgetSizeV)));
 const sizesChanged = () => JSON.stringify(sizes()) !== JSON.stringify(WS().defaults());
 
 async function saveSizes(next) {
   cardSizes = next;
-  window.appSettings = { ...(window.appSettings || {}), widgetSize: next };
+  window.appSettings = { ...(window.appSettings || {}), widgetSize: next, widgetSizeV: WS().VERSION };
   try {
-    await window.api.config.setSettings({ widgetSize: next });
+    await window.api.config.setSettings({ widgetSize: next, widgetSizeV: WS().VERSION });
   } catch { /* the view is already right; the disk write is best effort */ }
 }
 
@@ -688,13 +689,16 @@ function gridMetrics(grid) {
   return { cols, gap, cellW, cellH: ROW_UNIT + gap };
 }
 
-const ROW_UNIT = 120;
+const ROW_UNIT = 120;   // mirrors widgetSize.ROW_UNIT, for the drag arithmetic
 
-// Puts a card on the raster: its own size, clamped to the columns there are.
+// Puts a card on the raster: as many columns as it asks for, clamped to the
+// columns there are, and a floor under its height. Height is a minimum rather
+// than a row span — every card then occupies exactly one grid row, so a row of
+// cards shares one top and one bottom whatever sizes they carry.
 function applySpan(box, id, cols) {
   const span = WS().spanFor(sizes()[id], cols);
   box.style.gridColumn = `span ${span.cols}`;
-  box.style.gridRow = `span ${span.rows}`;
+  box.style.minHeight = WS().minHeight(span) + 'px';
 }
 
 // Dragging the corner resizes by whole cells, with the card itself following
@@ -719,7 +723,7 @@ function resizable(box, id) {
       next = WS().resize(start, ev.clientX - from.x, ev.clientY - from.y,
         { cellW: metrics.cellW, cellH: metrics.cellH, maxCols: metrics.cols });
       box.style.gridColumn = `span ${next.cols}`;
-      box.style.gridRow = `span ${next.rows}`;
+      box.style.minHeight = WS().minHeight(next) + 'px';
     };
     const onUp = async () => {
       grip.removeEventListener('pointermove', onMove);

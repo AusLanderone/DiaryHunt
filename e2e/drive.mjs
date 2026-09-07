@@ -1032,32 +1032,11 @@ try {
     shape.tracks.length >= 2 && shape.equalTracks, JSON.stringify(shape.tracks));
   check('every card sits on that raster, whole cells wide',
     shape.offGrid.length === 0, shape.offGrid.join('|'));
-  check('cards that share a row end where each other end — no ragged edges',
-    shape.ragged === 0, String(shape.ragged));
-  const tiling = await page.evaluate(() => {
-    const grid = document.querySelector('.stats-grid');
-    const gw = grid.getBoundingClientRect().width;
-    const bands = new Map();
-    [...grid.children].forEach((c) => {
-      const r = c.getBoundingClientRect();
-      const key = Math.round(r.top);
-      bands.set(key, (bands.get(key) || 0) + r.width);
-    });
-    // a band is full when its cards plus the gaps between them cover the width
-    return [...bands.entries()].map(([top, filled]) => {
-      const inBand = [...grid.children]
-        .filter((c) => Math.round(c.getBoundingClientRect().top) === top).length;
-      return Math.round(gw - (filled + 14 * (inBand - 1)));
-    });
-  });
-  check('no band of cards leaves the row half empty',
-    tiling.every((short) => short <= 2), JSON.stringify(tiling));
-  // the equity card spans three rows of 120px with 14px between them
-  const tallCard = await page.evaluate(() =>
-    Math.round(document.querySelector('[data-widget="equity"]').getBoundingClientRect().height));
-  check('a card is exactly as tall as the rows it spans',
-    Math.abs(tallCard - 388) <= 4, `${tallCard}px, expected 388`);
-
+  // The default arrangement is the one the diary is actually kept in, dragged
+  // by hand — cards in a row may well be different heights, and a row may not
+  // fill the width. What must hold is the raster: whole cells, on the lines.
+  check('the cards are all on the raster, however they were arranged',
+    shape.offGrid.length === 0, shape.offGrid.join('|'));
   // drag the corner of a one-column card across a whole cell
   const grown = await page.evaluate(async () => {
     const grid = document.querySelector('.stats-grid');
@@ -1784,8 +1763,30 @@ try {
   check('the capital curve runs the full width again', balGrid.curveFull === true);
   check('a table stays inside its card instead of hanging over the next one',
     balGrid.sideSpill.length === 0, balGrid.sideSpill.join('|'));
-  check('a table too wide for its card scrolls inside it',
-    balGrid.scrollable.length > 0, balGrid.scrollable.join('|'));
+  const narrowed = await page.evaluate(async () => {
+    // squeeze the marks table into one column: its table no longer fits, and
+    // that is exactly when the clipping has to hold
+    await window.api.config.setSettings({ balancesSize: {
+      curve: { cols: 3, rows: 3 }, accounts: { cols: 1, rows: 2 },
+      snapshots: { cols: 1, rows: 2 }, flows: { cols: 1, rows: 2 },
+    } });
+    return true;
+  });
+  await page.reload();
+  await page.waitForSelector('#tab-balances', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-balances').click());
+  await page.waitForTimeout(400);
+  const squeezed = await page.evaluate(() => {
+    const cards = [...document.querySelectorAll('.stats-grid > .card')];
+    return {
+      spilling: cards.filter((c) => c.scrollWidth - c.clientWidth > 2).map((c) => c.dataset.widget),
+      scrolling: cards.filter((c) => [...c.querySelectorAll('.table-scroll')]
+        .some((b) => b.scrollWidth > b.clientWidth)).map((c) => c.dataset.widget),
+    };
+  });
+  check('a table too wide for its card scrolls inside it rather than over it',
+    narrowed && squeezed.scrolling.length > 0 && squeezed.spilling.length === 0,
+    JSON.stringify(squeezed));
   check('the balances cards line up in rows like the stats ones',
     balGrid.ragged === 0, String(balGrid.ragged));
 

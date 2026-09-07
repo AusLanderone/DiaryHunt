@@ -81,9 +81,17 @@ test('every balances widget has a size of its own', () => {
   }
 });
 
-test('the balances sizes tile three columns just like the stats ones', () => {
-  const cols = Object.values(ws.BALANCES_DEFAULTS).reduce((s, v) => s + v.cols, 0);
-  assert.strictEqual(cols % 3, 0, JSON.stringify(ws.BALANCES_DEFAULTS));
+// The defaults are the arrangement the diary is actually kept in, not a
+// theoretical tiling — what has to hold is that every one of them is a size the
+// grid can draw, and that normalize hands them back untouched.
+test('every default size is one the grid can actually draw', () => {
+  for (const defs of [ws.DEFAULTS, ws.BALANCES_DEFAULTS]) {
+    for (const [id, size] of Object.entries(defs)) {
+      assert.ok(size.cols >= 1 && size.cols <= ws.MAX_COLS, `${id}: ${size.cols} cols`);
+      assert.ok(size.rows >= 1 && size.rows <= ws.MAX_ROWS, `${id}: ${size.rows} rows`);
+    }
+    assert.deepStrictEqual(ws.normalize(defs, defs), ws.defaults(defs));
+  }
 });
 
 test('normalize takes the defaults it is given', () => {

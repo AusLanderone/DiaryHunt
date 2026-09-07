@@ -1047,18 +1047,46 @@ canvas { display: block; width: 100%; }
 .card:hover .card-gear, .card-gear:focus-visible { opacity: 1; }
 .card-gear:hover { color: var(--text); border-color: var(--line); background: var(--surface-2); }
 
-.range-field { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-.range-field .rf-label { font-size: 12px; color: var(--muted); }
-.range-input {
-  padding: 8px 10px;
+/* one row per band: «до 0,5 %», «от 0,5 до 1 %», «больше 2 %» */
+.range-modal { min-width: 420px; }
+.band-rows { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 2px; }
+.band-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 13px;
+}
+.band-row .br-from { min-width: 104px; text-align: right; color: var(--muted); }
+.band-row .br-unit, .band-row .br-tail-unit { color: var(--muted); }
+.band-row.tail { border-style: dashed; background: transparent; color: var(--muted-2); }
+.band-row.tail .br-from { color: var(--muted-2); }
+.br-num {
+  width: 86px; padding: 5px 8px;
+  border: 1px solid var(--line); border-radius: 6px;
+  background: var(--surface); color: var(--text);
+  font-family: var(--mono); font-size: 13px; text-align: right;
+}
+.br-num.wide { width: 68px; text-align: center; }
+.br-num:focus { outline: none; border-color: var(--accent); }
+.br-num.bad { border-color: var(--neg); background: color-mix(in srgb, var(--neg) 8%, var(--surface)); }
+.br-del {
+  margin-left: auto;
+  width: 24px; height: 24px; padding: 0;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted-2);
+  font-size: 12px; cursor: pointer;
+}
+.br-del:hover { color: var(--neg); border-color: var(--line); }
+.rf-add { align-self: flex-start; margin-top: 2px; }
+.range-error { min-height: 15px; margin: 8px 0 0; color: var(--neg); font-size: 12px; }
+
+.count-editor { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; }
+.br-step {
+  width: 30px; height: 30px; padding: 0;
   border: 1px solid var(--line); border-radius: 8px;
   background: var(--surface-2); color: var(--text);
-  font-family: var(--mono); font-size: 14px;
+  font-size: 15px; line-height: 1; cursor: pointer;
 }
-.range-input:focus { outline: none; border-color: var(--accent); }
-.range-input.bad { border-color: var(--neg); }
-.range-preview {
-  margin-top: 10px; padding: 8px 10px;
-  border: 1px dashed var(--line); border-radius: 8px;
-  color: var(--muted); font-size: 12px;
-}
+.br-step:hover { border-color: var(--accent); }
+.br-range { color: var(--muted-2); font-size: 12px; }

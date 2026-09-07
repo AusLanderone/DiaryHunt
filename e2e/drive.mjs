@@ -713,27 +713,60 @@ try {
   await page.waitForSelector('.modal', { timeout: 5000 });
   await page.screenshot({ path: path.join(SHOT, '05e-widget-range-dialog.png') });
   const dialog = await page.evaluate(() => ({
-    value: document.querySelector('[data-f="widget-range"]').value,
-    preview: document.querySelector('.range-preview')?.textContent || '',
+    edges: [...document.querySelectorAll('.band-rows .br-num')].map((i) => i.value),
+    rows: [...document.querySelectorAll('.band-row')].map((r) => r.textContent.trim()),
+    tail: document.querySelector('.band-row.tail')?.textContent.trim() || '',
     buttons: [...document.querySelectorAll('.modal-buttons .btn')].map((b) => b.textContent),
+    add: Boolean(document.querySelector('.rf-add')),
+    dels: document.querySelectorAll('.br-del').length,
   }));
   check('the dialog opens on the bands the widget is drawing now',
-    dialog.value === '0,5 1 2', dialog.value);
-  check('it previews the bands the numbers make',
-    /0,5/.test(dialog.preview) && /</.test(dialog.preview), dialog.preview);
+    dialog.edges.join('|') === '0,5|1|2', dialog.edges.join('|'));
+  check('a band reads as a sentence, and only its own edge is typed',
+    /^до\s*$/.test(dialog.rows[0].replace(/[\d,%]/g, '').trim())
+    || /^до/.test(dialog.rows[0]), dialog.rows.join(' / '));
+  check('the row after the first says where it starts',
+    /от\s*0,5\s*до/.test(dialog.rows[1].replace(/\s+/g, ' ')), dialog.rows[1]);
+  check('the last row says where everything above falls',
+    /больше\s*2/.test(dialog.tail.replace(/\s+/g, ' ')), dialog.tail);
+  check('every band can be removed and another added',
+    dialog.dels === 3 && dialog.add, JSON.stringify({ dels: dialog.dels, add: dialog.add }));
   check('it offers a way back to the app default',
     dialog.buttons.some((b) => /умолчанию/i.test(b)), dialog.buttons.join('|'));
 
+  // the wording follows the number being typed, without losing the caret
+  const typing = await page.evaluate(() => {
+    const input = document.querySelectorAll('.band-rows .br-num')[0];
+    input.focus();
+    input.value = '0,3';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return {
+      second: document.querySelectorAll('.band-row')[1].textContent.replace(/\s+/g, ' ').trim(),
+      focused: document.activeElement === document.querySelectorAll('.band-rows .br-num')[0],
+    };
+  });
+  check('the next row follows the edge being typed above it',
+    /от 0,3 до/.test(typing.second), typing.second);
+  check('and the caret stays in the row being typed in', typing.focused === true);
+
+  // adding a band suggests the next edge past the last one
+  const added = await page.evaluate(() => {
+    document.querySelector('.rf-add').click();
+    return [...document.querySelectorAll('.band-rows .br-num')].map((i) => i.value);
+  });
+  check('a new band starts past the last one',
+    added.length === 4 && added[3] === '4', added.join('|'));
+
   // one edge at 0,5%: #1 entered on 0,19% and #3 on 0,75%, so they split
-  const typed = await page.evaluate(() => {
-    const input = document.querySelector('[data-f="widget-range"]');
+  await page.evaluate(() => {
+    // the last band cannot be removed, so this stops at one row
+    for (let i = 0; i < 10 && document.querySelector('.br-del'); i++) document.querySelector('.br-del').click();
+    const input = document.querySelector('.band-rows .br-num');
     input.value = '0,5';
     input.dispatchEvent(new Event('input', { bubbles: true }));
-    return document.querySelector('.range-preview').textContent;
+    [...document.querySelectorAll('.modal-buttons .btn')]
+      .find((b) => /сохранить/i.test(b.textContent)).click();
   });
-  check('the preview follows what is being typed', /0,5/.test(typed) && !/1|2/.test(typed.replace(/0,5/g, '')), typed);
-  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
-    .find((b) => /сохранить/i.test(b.textContent)).click());
   await page.waitForTimeout(300);
   const afterBands = await bandsOf('Профит по спреду входа');
   check('the widget redraws on the bands that were set',
@@ -749,30 +782,50 @@ try {
   check('the bands survive a restart', afterReload.join('|') === afterBands.join('|'),
     afterReload.join('|'));
 
-  // nonsense is refused rather than wiping the widget
+  // nonsense in a row is refused, and the row says so
   await openGear('Профит по спреду входа');
   await page.waitForSelector('.modal', { timeout: 5000 });
   const refused = await page.evaluate(() => {
-    const input = document.querySelector('[data-f="widget-range"]');
+    const input = document.querySelector('.band-rows .br-num');
     input.value = 'сколько-нибудь';
     input.dispatchEvent(new Event('input', { bubbles: true }));
     [...document.querySelectorAll('.modal-buttons .btn')]
       .find((b) => /сохранить/i.test(b.textContent)).click();
-    return { open: Boolean(document.querySelector('.modal')),
-      bad: Boolean(document.querySelector('[data-f="widget-range"].bad')) };
+    return {
+      open: Boolean(document.querySelector('.modal')),
+      bad: Boolean(document.querySelector('.br-num.bad')),
+      says: document.querySelector('.range-error')?.textContent || '',
+    };
   });
-  check('a field with no numbers in it saves nothing',
-    refused.open && refused.bad, JSON.stringify(refused));
+  check('a row with no number in it saves nothing and is pointed at',
+    refused.open && refused.bad && /строке/i.test(refused.says), JSON.stringify(refused));
 
   await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
     .find((b) => /умолчанию/i.test(b.textContent)).click());
   await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
     .find((b) => /сохранить/i.test(b.textContent)).click());
   await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(SHOT, '05d-widget-ranges.png'), fullPage: true });
   check('«По умолчанию» puts the app bands back',
     (await bandsOf('Профит по спреду входа')).join('|') === beforeBands.join('|'),
     (await bandsOf('Профит по спреду входа')).join('|'));
+
+  // the histogram counts columns rather than banding anything, so it steps
+  await openGear('Распределение результатов');
+  await page.waitForSelector('.count-editor', { timeout: 5000 });
+  await page.screenshot({ path: path.join(SHOT, '05f-widget-count-dialog.png') });
+  const stepper = await page.evaluate(() => {
+    const before = document.querySelector('[data-f="edge-0"]').value;
+    [...document.querySelectorAll('.br-step')].find((b) => b.textContent === '+').click();
+    const up = document.querySelector('[data-f="edge-0"]').value;
+    [...document.querySelectorAll('.br-step')].find((b) => b.textContent === '−').click();
+    return { before, up, back: document.querySelector('[data-f="edge-0"]').value,
+      range: document.querySelector('.br-range')?.textContent || '' };
+  });
+  check('the histogram is stepped up and down, inside stated limits',
+    stepper.before === '8' && stepper.up === '9' && stepper.back === '8'
+    && /2/.test(stepper.range) && /40/.test(stepper.range), JSON.stringify(stepper));
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /отмена/i.test(b.textContent)).click());
 
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());

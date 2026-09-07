@@ -444,45 +444,169 @@ function gearButton(key) {
   return btn;
 }
 
+// One row per band, each reading as a sentence: «до 0,5 %», «от 0,5 до 1 %»,
+// and a last row saying where everything above the final edge falls. Only the
+// row's own upper edge is typed — the lower one is its neighbour's and updates
+// itself, so nothing has to be worked out in the head.
+function bandEditor(key, values) {
+  const spec = WR().SPECS[key];
+  const box = el('div', 'band-rows');
+
+  // the wording between the fields, refreshed in place so typing never moves
+  // the caret out of the row being typed in
+  const labels = () => {
+    [...box.querySelectorAll('.band-row')].forEach((row, i) => {
+      const from = row.querySelector('.br-from');
+      if (row.classList.contains('tail')) {
+        const last = String(values[values.length - 1] === undefined ? '' : values[values.length - 1]).trim();
+        from.textContent = last ? `больше ${last}` : 'всё остальное';
+        row.querySelector('.br-tail-unit').textContent = last ? spec.unit : '';
+      } else {
+        const prev = i === 0 ? '' : String(values[i - 1] === undefined ? '' : values[i - 1]).trim();
+        from.textContent = prev ? `от ${prev} до` : 'до';
+      }
+    });
+  };
+
+  const render = () => {
+    box.innerHTML = '';
+    values.forEach((value, i) => {
+      const row = el('div', 'band-row');
+      const input = el('input', 'br-num');
+      input.type = 'text';
+      input.inputMode = 'decimal';
+      input.dataset.f = 'edge-' + i;
+      input.value = String(value).replace('.', ',');
+      input.oninput = () => { values[i] = input.value; input.classList.remove('bad'); labels(); };
+
+      const unit = el('span', 'br-unit');
+      unit.textContent = spec.unit;
+      row.append(el('span', 'br-from'), input, unit);
+
+      if (values.length > 1) {
+        const del = el('button', 'br-del');
+        del.textContent = '✕';
+        del.title = 'Убрать полосу';
+        // a widget with no bands has nothing to draw, so the last one stays
+        del.onclick = () => {
+          if (values.length <= 1) return;
+          values.splice(i, 1);
+          render();
+        };
+        row.append(del);
+      }
+      box.append(row);
+    });
+
+    const tail = el('div', 'band-row tail');
+    tail.append(el('span', 'br-from'), el('span', 'br-tail-unit'));
+    box.append(tail);
+
+    if (values.length < WR().MAX_EDGES) {
+      const add = el('button', 'btn ghost mini rf-add');
+      add.textContent = '+ Добавить полосу';
+      add.onclick = () => {
+        values.push(String(WR().suggestEdge(key, values)).replace('.', ','));
+        render();
+        const last = box.querySelector('[data-f="edge-' + (values.length - 1) + '"]');
+        if (last) { last.focus(); last.select(); }
+      };
+      box.append(add);
+    }
+    labels();
+  };
+
+  render();
+  return box;
+}
+
+// The histogram has no bands, only a number of columns — a stepper says that
+// better than a text field does.
+function countEditor(key, state) {
+  const spec = WR().SPECS[key];
+  const box = el('div', 'count-editor');
+  const input = el('input', 'br-num wide');
+  input.type = 'text';
+  input.inputMode = 'numeric';
+  input.dataset.f = 'edge-0';
+  input.value = String(state.value);
+  input.oninput = () => { state.value = input.value; input.classList.remove('bad'); };
+
+  const step = (by) => {
+    const now = WR().parse(key, input.value) || spec.min;
+    input.value = String(Math.min(spec.max, Math.max(spec.min, now + by)));
+    state.value = input.value;
+    input.classList.remove('bad');
+  };
+  const minus = el('button', 'br-step');
+  minus.textContent = '−';
+  minus.title = 'Меньше столбцов';
+  minus.onclick = () => step(-1);
+  const plus = el('button', 'br-step');
+  plus.textContent = '+';
+  plus.title = 'Больше столбцов';
+  plus.onclick = () => step(1);
+
+  const unit = el('span', 'br-unit');
+  unit.textContent = spec.unit;
+  const range = el('span', 'br-range');
+  range.textContent = `от ${spec.min} до ${spec.max}`;
+  box.append(minus, input, plus, unit, range);
+  return box;
+}
+
+// a refused save should say which row it tripped over
+function markBadRows(modal, values) {
+  values.forEach((raw, i) => {
+    const input = modal.querySelector('[data-f="edge-' + i + '"]');
+    if (!input) return;
+    const text = String(raw).trim();
+    const n = Number(text.replace(',', '.'));
+    input.classList.toggle('bad', Boolean(text) && !(Number.isFinite(n) && n >= 0));
+  });
+}
+
 function openRangeDialog(key) {
   const spec = WR().SPECS[key];
   const isCount = spec.kind === 'count';
 
-  const input = el('input', 'range-input');
-  input.type = 'text';
-  input.dataset.f = 'widget-range';
-  input.value = WR().format(key, ranges()[key]);
+  // the editor works on its own copy; nothing reaches the widget until save
+  const values = isCount ? []
+    : WR().toDisplay(key, ranges()[key]).map((v) => String(v).replace('.', ','));
+  const state = { value: isCount ? ranges()[key] : null };
 
-  const preview = el('div', 'range-preview');
-  const field = el('label', 'range-field');
-  const caption = el('span', 'rf-label');
-  caption.textContent = isCount ? `Столбцов, ${spec.unit}` : `Границы полос, ${spec.unit}`;
-  field.append(caption, input);
-
-  const redrawPreview = () => {
-    const parsed = WR().parse(key, input.value);
-    input.classList.toggle('bad', parsed === null);
-    preview.textContent = parsed === null
-      ? 'Ни одного числа — впишите значения через пробел'
-      : bandPreview(key, parsed);
-  };
-  input.oninput = redrawPreview;
-  redrawPreview();
-
-  const modal = el('div', 'modal');
-  const title = el('h2'); title.textContent = spec.title;
-  const hint = el('p', 'hint'); hint.textContent = spec.hint;
+  const modal = el('div', 'modal range-modal');
+  const title = el('h2');
+  title.textContent = spec.title;
+  const hint = el('p', 'hint');
+  hint.textContent = isCount
+    ? 'На сколько столбцов делить размах профита.'
+    : `Полосы, по которым виджет делит сделки. В каждой строке — её верхняя граница, ${spec.unit}.`;
+  const error = el('p', 'range-error');
   const buttons = el('div', 'modal-buttons');
-  modal.append(title, hint, field, preview, buttons);
+  modal.append(title, hint, isCount ? countEditor(key, state) : bandEditor(key, values), error, buttons);
 
   const backdrop = el('div', 'modal-backdrop');
   backdrop.append(modal);
 
+  const rebuild = () => {
+    const sel = isCount ? '.count-editor' : '.band-rows';
+    modal.replaceChild(isCount ? countEditor(key, state) : bandEditor(key, values),
+      modal.querySelector(sel));
+  };
+
   const toDefault = el('button', 'btn ghost');
   toDefault.textContent = 'По умолчанию';
   toDefault.onclick = () => {
-    input.value = WR().format(key, WR().defaults()[key]);
-    redrawPreview();
+    error.textContent = '';
+    if (isCount) {
+      state.value = WR().defaults()[key];
+    } else {
+      values.length = 0;
+      WR().toDisplay(key, WR().defaults()[key])
+        .forEach((v) => values.push(String(v).replace('.', ',')));
+    }
+    rebuild();
   };
   const cancel = el('button', 'btn ghost');
   cancel.textContent = 'Отмена';
@@ -490,9 +614,18 @@ function openRangeDialog(key) {
   const save = el('button', 'btn primary');
   save.textContent = 'Сохранить';
   save.onclick = async () => {
-    const parsed = WR().parse(key, input.value);
-    if (parsed === null) { redrawPreview(); input.focus(); return; }
-    await saveRanges({ ...ranges(), [key]: parsed });
+    const next = isCount ? WR().parse(key, state.value) : WR().fromDisplay(key, values);
+    if (next === null) {
+      const anyFilled = values.some((v) => String(v).trim());
+      error.textContent = isCount
+        ? 'Впишите число столбцов.'
+        : anyFilled
+          ? 'В подсвеченной строке не число. Исправьте её или уберите полосу.'
+          : 'Оставьте хотя бы одну полосу.';
+      markBadRows(modal, isCount ? [state.value] : values);
+      return;
+    }
+    await saveRanges({ ...ranges(), [key]: next });
     backdrop.remove();
     redrawBody();
   };
@@ -500,8 +633,8 @@ function openRangeDialog(key) {
 
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
   document.body.appendChild(backdrop);
-  input.focus();
-  input.select();
+  const first = modal.querySelector('[data-f="edge-0"]');
+  if (first) { first.focus(); first.select(); }
 }
 
 // ---------- extra filters ----------

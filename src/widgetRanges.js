@@ -118,10 +118,48 @@ function format(key, value) {
   const spec = SPECS[key];
   if (!spec) return '';
   if (spec.kind === 'count') return String(value);
-  return (value || []).map((v) => showNumber(v / spec.factor)).join(' ');
+  return toDisplay(key, value).map(showNumber).join(' ');
 }
 
-const _api = { DEFAULTS, SPECS, KEYS, MAX_EDGES, defaults, normalize, parse, format };
+// ---------- one row per band ----------
+
+// The editor works a band at a time, so it needs the edges as plain numbers in
+// the field's unit and a way back.
+function toDisplay(key, value) {
+  const spec = SPECS[key];
+  if (!spec || spec.kind === 'count') return [];
+  return (value || []).map((v) => Number((v / spec.factor).toFixed(6)));
+}
+
+// What the rows hold, as a stored value. An empty row is a band being deleted;
+// a row with something unreadable in it stops the save instead, so a typo can
+// never quietly drop a band.
+function fromDisplay(key, values) {
+  const spec = SPECS[key];
+  if (!spec || spec.kind === 'count') return null;
+  const numbers = [];
+  for (const raw of values || []) {
+    const text = String(raw).trim();
+    if (!text) continue;
+    const n = Number(text.replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0) return null;
+    numbers.push(n * spec.factor);
+  }
+  return cleanEdges(numbers, true);
+}
+
+// Where the next band should start when one is added: past the last one, and
+// at the app's own first edge when there are none left.
+function suggestEdge(key, values) {
+  const spec = SPECS[key];
+  if (!spec || spec.kind === 'count') return 0;
+  const last = (values || []).length ? Number(values[values.length - 1]) : null;
+  if (last === null || !Number.isFinite(last)) return toDisplay(key, DEFAULTS[key])[0] || 1;
+  return last > 0 ? Number((last * 2).toFixed(6)) : 1;
+}
+
+const _api = { DEFAULTS, SPECS, KEYS, MAX_EDGES, defaults, normalize, parse, format,
+  toDisplay, fromDisplay, suggestEdge };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.widgetRanges = _api;
 })();

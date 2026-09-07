@@ -1110,3 +1110,18 @@ canvas { display: block; width: 100%; }
 .card-drag:active { cursor: grabbing; }
 .card.dragging { opacity: .5; }
 .card.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+
+/* ---------- what the trading cost ---------- */
+.fee-total {
+  margin: 2px 0 12px;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 22px; font-weight: 600; color: var(--text);
+}
+.fee-lines { display: flex; flex-direction: column; }
+.fee-lines .fl {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 4px 0; font-size: 12.5px;
+}
+.fee-lines .fl .k { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fee-lines .fl .v { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
+.fee-lines .fl.sep { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line-soft); }

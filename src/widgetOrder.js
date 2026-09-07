@@ -7,7 +7,7 @@
 (function () {
 
 const DEFAULT_ORDER = [
-  'equity', 'days', 'hist', 'calendar',
+  'equity', 'days', 'hist', 'fees', 'calendar',
   'spread', 'hold', 'capital', 'weekday', 'ticker', 'tag', 'months',
 ];
 

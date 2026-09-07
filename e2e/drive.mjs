@@ -484,7 +484,7 @@ try {
       metricsDisplay: getComputedStyle(document.querySelector('.metrics')).display,
     };
   });
-  check('every widget is a card in one grid', layout.cards === 11, JSON.stringify(layout));
+  check('every widget is a card in one grid', layout.cards === 12, JSON.stringify(layout));
   check('cards share rows instead of stacking one per line', layout.maxPerRow >= 2, JSON.stringify(layout));
   check('equity, calendar and the monthly table span the full row', layout.wide === 3, JSON.stringify(layout));
   check('metrics use the equal-tile grid', layout.metricsDisplay === 'grid', layout.metricsDisplay);
@@ -678,6 +678,33 @@ try {
   await page.evaluate(() => document.querySelector('.stats-filters .reset').click());
   await page.screenshot({ path: path.join(SHOT, '05b-stats-filters.png'), fullPage: true });
   check('the reset leaves the tab as it was', (await closedNow()) === '2', `got ${await closedNow()}`);
+
+  console.log('\n[3e2] what the trading cost');
+  // #1 paid 270 + 232 ₽, #3 paid 46 ₽: 548 ₽ over two trades, 274 ₽ each.
+  // Gross before fees is 1 841,40 + 908,97 = 2 750,37 ₽, so the fees ate 19,93%.
+  const fees = await page.evaluate(() => {
+    const cardEl = [...document.querySelectorAll('.card')]
+      .find((c) => c.dataset.widget === 'fees');
+    if (!cardEl) return null;
+    return {
+      title: cardEl.querySelector('.card-title').textContent,
+      total: cardEl.querySelector('.fee-total').textContent,
+      lines: [...cardEl.querySelectorAll('.fee-lines .fl')]
+        .map((r) => `${r.querySelector('.k').textContent}=${r.querySelector('.v').textContent}`),
+    };
+  });
+  await page.locator('[data-widget="fees"]').screenshot({ path: path.join(SHOT, '05h-fees-widget.png') });
+  check('the stats tab carries a fees widget', fees !== null && /комиссии/i.test(fees.title),
+    fees && fees.title);
+  check('it shows what the trading cost in total', norm(fees.total).includes('548,00'), fees.total);
+  check('and per trade', fees.lines.some((l) => /за сделку/i.test(l) && norm(l).includes('274,00')),
+    fees.lines.join(' | '));
+  check('and the share of the gross the fees ate',
+    fees.lines.some((l) => /доля/i.test(l) && /19,9/.test(l)), fees.lines.join(' | '));
+  check('and which venue took it, dearest first',
+    /MOEX=/.test(fees.lines[2]) && norm(fees.lines[2]).includes('316,00')
+    && /FOREX=/.test(fees.lines[3]) && norm(fees.lines[3]).includes('232,00'),
+    fees.lines.join(' | '));
 
   console.log('\n[3f] per-widget ranges');
   const bandsOf = (title) => page.evaluate((t) => {
@@ -873,7 +900,7 @@ try {
 
   const startOrder = await cardOrder();
   check('every card knows which widget it is, and they stand in a known order',
-    startOrder.length === 11 && startOrder[0] === 'equity' && !startOrder.includes(undefined),
+    startOrder.length === 12 && startOrder[0] === 'equity' && !startOrder.includes(undefined),
     startOrder.join('|'));
   const handles = await page.evaluate(() => ({
     count: document.querySelectorAll('.stats-grid .card-drag').length,
@@ -881,7 +908,7 @@ try {
     draggableBefore: document.querySelector('.stats-grid .card').draggable,
   }));
   check('every card has a handle, visible without hovering',
-    handles.count === 11 && handles.opacity >= 0.2, JSON.stringify(handles));
+    handles.count === 12 && handles.opacity >= 0.2, JSON.stringify(handles));
   check('a card is not draggable until its handle is held',
     handles.draggableBefore === false, String(handles.draggableBefore));
 
@@ -889,7 +916,7 @@ try {
   await page.waitForTimeout(400);
   const moved = await cardOrder();
   check('a card dropped on another takes its place',
-    moved[0] === 'tag' && moved[1] === 'equity' && moved.length === 11, moved.join('|'));
+    moved[0] === 'tag' && moved[1] === 'equity' && moved.length === 12, moved.join('|'));
 
   await page.reload();
   await page.waitForSelector('#tab-stats', { timeout: 10000 });

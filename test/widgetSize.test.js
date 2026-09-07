@@ -12,25 +12,24 @@ test('every widget the stats tab draws has a size of its own', () => {
 });
 
 test('nothing saved means the sizes the app ships with', () => {
-  assert.deepStrictEqual(ws.normalize(undefined, ws.VERSION), ws.defaults());
-  assert.deepStrictEqual(ws.normalize(null, ws.VERSION), ws.defaults());
+  assert.deepStrictEqual(ws.normalize(), ws.defaults());
+  assert.deepStrictEqual(ws.normalize(null), ws.defaults());
 });
 
 test('a saved size is kept', () => {
-  assert.deepStrictEqual(ws.normalize({ fees: { cols: 2, rows: 4 } }, ws.VERSION).fees,
-    { cols: 2, rows: 4 });
+  assert.deepStrictEqual(ws.normalize({ fees: { cols: 2, rows: 4 } }).fees, { cols: 2, rows: 4 });
 });
 
 test('a size that makes no sense falls back to the default', () => {
   const d = ws.defaults();
-  assert.deepStrictEqual(ws.normalize({ fees: { cols: 0, rows: 2 } }, ws.VERSION).fees, d.fees);
-  assert.deepStrictEqual(ws.normalize({ fees: { cols: 99, rows: 2 } }, ws.VERSION).fees, d.fees);
-  assert.deepStrictEqual(ws.normalize({ fees: 'большой' }, ws.VERSION).fees, d.fees);
-  assert.deepStrictEqual(ws.normalize({ fees: { cols: 2 } }, ws.VERSION).fees, d.fees);
+  assert.deepStrictEqual(ws.normalize({ fees: { cols: 0, rows: 2 } }).fees, d.fees);
+  assert.deepStrictEqual(ws.normalize({ fees: { cols: 99, rows: 2 } }).fees, d.fees);
+  assert.deepStrictEqual(ws.normalize({ fees: 'большой' }).fees, d.fees);
+  assert.deepStrictEqual(ws.normalize({ fees: { cols: 2 } }).fees, d.fees);
 });
 
 test('a widget the saved sizes never heard of still gets one', () => {
-  assert.deepStrictEqual(ws.normalize({}, ws.VERSION).equity, ws.defaults().equity);
+  assert.deepStrictEqual(ws.normalize({}).equity, ws.defaults().equity);
 });
 
 // ---------- fitting the grid it is drawn in ----------
@@ -72,25 +71,4 @@ test('a card cannot be dragged wider than the grid', () => {
 
 test('and not taller than a screen holds', () => {
   assert.strictEqual(ws.resize({ cols: 1, rows: 1 }, 0, 9000, metrics).rows, ws.MAX_ROWS);
-});
-
-test('a size in rows is a floor in pixels, not a ceiling', () => {
-  assert.strictEqual(ws.minHeight({ cols: 1, rows: 1 }, 120, 14), 120);
-  assert.strictEqual(ws.minHeight({ cols: 1, rows: 3 }, 120, 14), 388);
-  assert.ok(ws.minHeight({ cols: 1, rows: 2 }) > ws.minHeight({ cols: 1, rows: 1 }));
-});
-
-// ---------- the model changed under the sizes ----------
-
-test('sizes saved before the height became a floor are not carried over', () => {
-  // rows used to be a hard span; the same numbers mean something else now, and
-  // keeping them left holes in the page nobody asked for
-  const saved = { fees: { cols: 2, rows: 1 }, months: { cols: 2, rows: 1 } };
-  assert.deepStrictEqual(ws.normalize(saved, 1), ws.defaults());
-  assert.deepStrictEqual(ws.normalize(saved), ws.defaults());
-});
-
-test('sizes saved by this version are kept', () => {
-  const saved = { fees: { cols: 2, rows: 1 } };
-  assert.deepStrictEqual(ws.normalize(saved, ws.VERSION).fees, { cols: 2, rows: 1 });
 });

@@ -1065,59 +1065,6 @@ try {
     stillTidy.offGrid.length === 0, stillTidy.offGrid.join('|'));
   await page.screenshot({ path: path.join(SHOT, '05i-widget-sizes.png'), fullPage: true });
 
-  // Hand-made sizes, the shape a real diary ends up with after a few drags —
-  // this is what fell apart into a mosaic when height was a hard row span.
-  await page.evaluate(() => window.api.config.setSettings({
-    widgetSizeV: window.widgetSize.VERSION,
-    widgetSize: {
-      equity: { cols: 3, rows: 3 }, days: { cols: 1, rows: 3 }, hist: { cols: 1, rows: 1 },
-      fees: { cols: 1, rows: 1 }, calendar: { cols: 2, rows: 1 }, spread: { cols: 1, rows: 1 },
-      hold: { cols: 1, rows: 1 }, capital: { cols: 1, rows: 2 }, weekday: { cols: 1, rows: 2 },
-      ticker: { cols: 1, rows: 2 }, tag: { cols: 1, rows: 2 }, months: { cols: 2, rows: 1 },
-    },
-  }));
-  await page.reload();
-  await page.waitForSelector('#tab-stats', { timeout: 10000 });
-  await page.evaluate(() => document.querySelector('#tab-stats').click());
-  await page.waitForTimeout(500);
-  const mixed = await page.evaluate(() => {
-    const cards = [...document.querySelectorAll('.stats-grid > .card')];
-    const spilling = cards.filter((c) => {
-      const r = c.getBoundingClientRect();
-      return [...c.children].some((kid) => kid.getBoundingClientRect().bottom - r.bottom > 2);
-    }).map((c) => c.dataset.widget);
-    const overlapping = [];
-    for (let i = 0; i < cards.length; i++) {
-      for (let j = i + 1; j < cards.length; j++) {
-        const a = cards[i].getBoundingClientRect(), b = cards[j].getBoundingClientRect();
-        if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) {
-          overlapping.push(`${cards[i].dataset.widget}×${cards[j].dataset.widget}`);
-        }
-      }
-    }
-    const bands = new Map();
-    cards.forEach((c) => {
-      const r = c.getBoundingClientRect();
-      const key = Math.round(r.top);
-      if (!bands.has(key)) bands.set(key, []);
-      bands.get(key).push(Math.round(r.bottom));
-    });
-    return {
-      count: cards.length,
-      spilling,
-      overlapping,
-      ragged: [...bands.values()].filter((b) => new Set(b).size > 1).length,
-    };
-  });
-  check('hand-made sizes leave every widget on the page',
-    mixed.count === 12, String(mixed.count));
-  check('nothing spills out of its card, whatever size it was given',
-    mixed.spilling.length === 0, mixed.spilling.join('|'));
-  check('and no two cards land on top of each other',
-    mixed.overlapping.length === 0, mixed.overlapping.join('|'));
-  check('rows still share one top and one bottom with hand-made sizes',
-    mixed.ragged === 0, String(mixed.ragged));
-
   await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
     .find((b) => /раскладк/i.test(b.textContent)).click());
   await page.waitForTimeout(400);

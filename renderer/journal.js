@@ -87,7 +87,7 @@ const COLUMNS = [
   { key: 'spreadFact', label: 'Собран', sortable: true, right: true },
   { key: 'size', label: 'Объём', sortable: true, right: true },
   { key: 'hold', label: 'Дней', sortable: true, right: true },
-  { key: 'ret', label: 'Дох.', sortable: true, right: true },
+  { key: 'ret', label: 'Доходность', sortable: true, right: true },
   { key: 'profit', label: 'Чистый', sortable: true, right: true },
   { label: '' },
 ];
@@ -225,17 +225,20 @@ function filterBar(trades) {
 function header() {
   const head = el('div', 'journal-head');
   COLUMNS.forEach((col) => {
-    const cell = el('div', 'jh' + (col.right ? ' right' : ''));
-    cell.textContent = col.label;
+    const cell = el('div', 'jh' + (col.right ? ' right' : '') + (col.key ? ' jh-' + col.key : ''));
+    // the label is its own element so it can end exactly where the numbers
+    // below it end — the sort arrow sits on the outer side, never between
+    const label = el('span', 'lbl', col.label);
+    cell.append(label);
     if (col.sortable) {
       cell.classList.add('sortable');
-      if (state.sortKey === col.key) {
-        cell.classList.add('active');
-        cell.append(el('span', 'arrow', state.sortDir === 'asc' ? '▲' : '▼'));
-      } else {
+      const arrow = state.sortKey === col.key
+        ? el('span', 'arrow', state.sortDir === 'asc' ? '▲' : '▼')
         // a pale ⇅ so the column reads as sortable before anyone hovers it
-        cell.append(el('span', 'arrow hint', '⇅'));
-      }
+        : el('span', 'arrow hint', '⇅');
+      if (state.sortKey === col.key) cell.classList.add('active');
+      if (col.right) cell.insertBefore(arrow, label);
+      else cell.append(arrow);
       cell.title = state.sortKey === col.key
         ? 'Ещё клик — сбросить сортировку'
         : 'Клик — сортировать, третий клик — сбросить';

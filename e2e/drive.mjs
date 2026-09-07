@@ -337,6 +337,52 @@ try {
     filtered.afterOpen === 0 && /ничего не подошло/i.test(filtered.emptyNote), JSON.stringify(filtered));
   check('clearing the filter brings every trade back', filtered.restored === 2, JSON.stringify(filtered));
 
+  // every column header lines up with the values under it: the glyphs, not the
+  // cell boxes, so a badge's padding or a sort arrow can't fake it
+  const align = await page.evaluate(() => {
+    const textRect = (node) => {
+      const r = document.createRange();
+      r.selectNodeContents(node);
+      return r.getBoundingClientRect();
+    };
+    const heads = [...document.querySelectorAll('.journal-head .jh')];
+    const label = (re) => {
+      const h = heads.find((x) => re.test(x.textContent));
+      return h ? (h.querySelector('.lbl') || h) : null;
+    };
+    const row = document.querySelectorAll('.trade-row')[0];
+    const gap = ([name, sel, edge]) => {
+      const head = label(new RegExp(name, 'i'));
+      const cell = row.querySelector(sel);
+      if (!head || !cell) return { name, dx: 'missing' };
+      return { name, dx: Math.round(textRect(head)[edge] - textRect(cell)[edge]) };
+    };
+    return {
+      // the entry and exit halves of the spread column stack across rows too,
+      // however many digits or minus signs each carries
+      subcols: ['sp-in', 'sp-out'].map((cls) => ({
+        cls,
+        edges: [...new Set([...document.querySelectorAll('.trade-row .' + cls)]
+          .map((e) => Math.round(e.getBoundingClientRect().right)))],
+      })),
+      right: [['спред вх', '.spread', 'right'], ['собран', '.sp-fact', 'right'],
+        ['объём', '.size', 'right'], ['дней', '.hold', 'right'],
+        ['доходность', '.ret', 'right'], ['чистый', '.money .sum', 'right']].map(gap),
+      left: [['№', '.num', 'left'], ['дата', '.date .d1', 'left'],
+        ['тикер', '.ticker .tk', 'left']].map(gap),
+    };
+  });
+  check('right-aligned headers end where their numbers end',
+    align.right.every((c) => typeof c.dx === 'number' && Math.abs(c.dx) <= 1),
+    JSON.stringify(align.right));
+  check('left-aligned headers start where their values start',
+    align.left.every((c) => typeof c.dx === 'number' && Math.abs(c.dx) <= 1),
+    JSON.stringify(align.left));
+  check('the return column is named in full', /доходность/i.test(journal.heads.join('|')),
+    journal.heads.join('|'));
+  check('the entry and exit spreads stack across rows',
+    align.subcols.every((s) => s.edges.length === 1), JSON.stringify(align.subcols));
+
   // the new columns sort like any other: #1 (ED) ties up more money than #3
   const sizeSort = await page.evaluate(() => {
     const head = [...document.querySelectorAll('.journal-head .sortable')]

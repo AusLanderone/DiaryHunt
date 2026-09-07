@@ -7,8 +7,8 @@
 (function () {
 
 const DEFAULT_ORDER = [
-  'equity', 'days', 'hist', 'fees', 'calendar',
-  'spread', 'hold', 'capital', 'weekday', 'ticker', 'tag', 'months',
+  'equity', 'days', 'hist', 'spread', 'hold', 'capital',
+  'weekday', 'ticker', 'tag', 'fees', 'calendar', 'months',
 ];
 
 // The balances tab is laid out by the same rules, with widgets of its own.

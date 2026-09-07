@@ -11,33 +11,32 @@ const MAX_COLS = 4;
 const MAX_ROWS = 8;
 const MIN_COL_WIDTH = 340;   // narrower than this and a card stops being readable
 
-// The sizes are chosen to TILE the raster in the default order: each band of
-// cards fills the width exactly and its members span the same rows, so no card
-// is left short of its neighbour and no corner of the page is dead space.
-// Bands at three columns: [equity] [days hist fees] [calendar spread hold]
-// [capital weekday ticker] [tag months]. At two columns or one they pair up
-// just as evenly.
+// The arrangement the diary is actually kept in — read off a working install
+// and written down here, so a new one opens on the same page rather than on a
+// theoretical default. Change it by dragging; «Раскладка по умолчанию» comes
+// back to exactly this.
 const DEFAULTS = {
   equity: { cols: 3, rows: 3 },
   days: { cols: 1, rows: 3 },
-  hist: { cols: 1, rows: 3 },
-  fees: { cols: 1, rows: 3 },
-  calendar: { cols: 1, rows: 3 },
-  spread: { cols: 1, rows: 3 },
-  hold: { cols: 1, rows: 3 },
-  capital: { cols: 1, rows: 2 },
-  weekday: { cols: 1, rows: 2 },
-  ticker: { cols: 1, rows: 2 },
-  tag: { cols: 1, rows: 2 },
-  months: { cols: 2, rows: 2 },
+  hist: { cols: 1, rows: 1 },
+  fees: { cols: 1, rows: 1 },
+  calendar: { cols: 2, rows: 1 },
+  spread: { cols: 1, rows: 1 },
+  hold: { cols: 1, rows: 1 },
+  capital: { cols: 1, rows: 1 },
+  weekday: { cols: 1, rows: 1 },
+  ticker: { cols: 1, rows: 1 },
+  tag: { cols: 1, rows: 1 },
+  months: { cols: 2, rows: 1 },
 };
 
-// The balances tab: the curve across the top, then the three panels in a row.
+// The balances tab, likewise taken from the working install: the curve across
+// the top, the marks and the movements wide enough for their tables.
 const BALANCES_DEFAULTS = {
-  curve: { cols: 3, rows: 3 },
+  curve: { cols: 4, rows: 3 },
   accounts: { cols: 1, rows: 2 },
-  snapshots: { cols: 1, rows: 2 },
-  flows: { cols: 1, rows: 2 },
+  snapshots: { cols: 3, rows: 2 },
+  flows: { cols: 2, rows: 2 },
 };
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));

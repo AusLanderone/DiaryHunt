@@ -406,6 +406,140 @@ const PERIODS = [
 ];
 let period = 'all';
 
+// ---------- extra filters ----------
+
+// The windows live in src/statsFilter.js; this is only their control panel.
+// Module state, so switching tabs and coming back keeps what was set.
+const SF = () => window.statsFilter;
+let filter = null;                  // null until the first render, then a spec
+let filtersOpen = false;
+let openPicker = null;              // which value picker is unfolded, if any
+
+const theFilter = () => (filter || (filter = { ...SF().EMPTY }));
+const filtersActive = () => SF().activeCount(theFilter()) > 0;
+
+// A comma is how a decimal is written here, and a blank field is no bound.
+function parseNum(text) {
+  const s = String(text).trim().replace(/\s/g, '').replace(',', '.');
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isNaN(n) ? null : n;
+}
+const showNum = (v) => (v === null || v === undefined ? '' : String(v).replace('.', ','));
+
+const setDim = (key, value) => { filter = { ...theFilter(), [key]: value }; };
+
+// closing the open picker on a click elsewhere — the panel itself stops the
+// click, so ticking values keeps it unfolded
+document.addEventListener('click', () => {
+  if (!openPicker || !document.querySelector('.stats-filters')) return;
+  openPicker = null;
+  rerenderAll();
+});
+
+const VALUE_DIMS = [
+  { key: 'ticker', name: 'Тикер', blank: 'без тикера' },
+  { key: 'tag', name: 'Тег', blank: 'без тега' },
+  { key: 'exchange', name: 'Биржа', blank: 'без биржи' },
+  { key: 'weekday', name: 'День недели', blank: 'без дня' },
+];
+
+const RANGE_DIMS = [
+  { key: 'size', name: 'Объём на ногу, ₽', hint: 'Сколько денег занимает одна сторона сделки' },
+  { key: 'entrySpread', name: 'Спред входа, %', hint: 'По величине, без учёта порядка ног' },
+  { key: 'exitSpread', name: 'Спред выхода, %', hint: 'По величине, без учёта порядка ног' },
+  { key: 'collected', name: 'Собран, %', hint: 'Со знаком: минус — сделка закрыта в убыток' },
+];
+
+function rangeField(dim) {
+  const box = el('div', 'filter-field');
+  const label = el('span', 'ff-label'); label.textContent = dim.name;
+  if (dim.hint) box.title = dim.hint;
+  box.append(label);
+  const side = (which, placeholder) => {
+    const input = el('input', 'ff-num');
+    input.type = 'text';
+    input.inputMode = 'decimal';
+    input.placeholder = placeholder;
+    input.dataset.f = `${dim.key}.${which}`;
+    input.value = showNum(theFilter()[dim.key][which]);
+    input.oninput = () => {
+      setDim(dim.key, { ...theFilter()[dim.key], [which]: parseNum(input.value) });
+      // only the body is redrawn, so the field keeps the caret being typed into
+      redrawBody();
+      refreshToggle();
+    };
+    return input;
+  };
+  box.append(side('min', 'от'), el('span', 'ff-dash'), side('max', 'до'));
+  return box;
+}
+
+function dateField() {
+  const box = el('div', 'filter-field');
+  box.title = 'По дате закрытия; открытые сделки окно по датам не отбрасывает';
+  const label = el('span', 'ff-label'); label.textContent = 'Даты закрытия';
+  box.append(label);
+  const side = (key) => {
+    const input = el('input', 'ff-date');
+    input.type = 'date';
+    input.dataset.f = key;
+    input.value = theFilter()[key] || '';
+    input.onchange = () => { setDim(key, input.value); redrawBody(); refreshToggle(); };
+    return input;
+  };
+  box.append(side('from'), el('span', 'ff-dash'), side('to'));
+  return box;
+}
+
+function filtersPanel(pool) {
+  const panel = el('div', 'stats-filters');
+  const options = SF().options(pool);
+
+  const values = el('div', 'filter-row');
+  values.append(dateField());
+  VALUE_DIMS.forEach((dim) => {
+    values.append(window.pickers.valuePicker({
+      name: dim.name,
+      blank: dim.blank,
+      rows: options[dim.key],
+      spec: theFilter()[dim.key],
+      open: openPicker === dim.key,
+      onOpen: (open) => { openPicker = open ? dim.key : null; rerenderAll(); },
+      onChange: (spec) => { setDim(dim.key, spec); rerenderAll(); },
+    }));
+  });
+  panel.append(values);
+
+  const ranges = el('div', 'filter-row');
+  RANGE_DIMS.forEach((dim) => ranges.append(rangeField(dim)));
+  panel.append(ranges);
+
+  const foot = el('div', 'filter-foot');
+  const reset = el('button', 'btn ghost mini reset');
+  reset.textContent = 'Сбросить';
+  reset.disabled = !filtersActive();
+  reset.onclick = () => { filter = { ...SF().EMPTY }; openPicker = null; rerenderAll(); };
+  foot.append(reset);
+  panel.append(foot);
+  return panel;
+}
+
+const toggleLabel = () => {
+  const n = SF().activeCount(theFilter());
+  return n ? `Фильтры · ${n}` : 'Фильтры';
+};
+
+// the count changes as ranges are typed into, and only the body is redrawn then
+function refreshToggle() {
+  const btn = document.querySelector('.stats-filters-toggle');
+  if (!btn) return;
+  btn.textContent = toggleLabel();
+  btn.classList.toggle('active', filtersActive());
+  const reset = document.querySelector('.stats-filters .reset');
+  if (reset) reset.disabled = !filtersActive();
+}
+
 function periodBar(onChange) {
   const bar = el('div', 'period-bar');
   const label = el('span', 'period-label'); label.textContent = 'Период:';
@@ -416,21 +550,54 @@ function periodBar(onChange) {
     b.onclick = () => { period = key; onChange(); };
     bar.appendChild(b);
   });
+
+  const toggle = el('button', 'chip stats-filters-toggle' + (filtersActive() ? ' active' : ''));
+  toggle.textContent = toggleLabel();
+  toggle.title = 'Дополнительные окна: даты, тикер, тег, биржа, день недели, объём и спреды';
+  toggle.onclick = (e) => {
+    e.stopPropagation();
+    filtersOpen = !filtersOpen;
+    rerenderAll();
+  };
+  bar.appendChild(toggle);
   return bar;
 }
 
 // ---------- main render ----------
 
+// The bar is drawn once per render; the body is redrawn on its own whenever a
+// filter changes, so a field being typed into keeps the caret.
 function renderStats(container, trades) {
   lastRender = { container, trades };
+  container.innerHTML = '';
+  hideTip();
+
+  const bar = el('div', 'stats-bar');
+  bar.append(periodBar(rerenderAll));
+  if (filtersOpen) bar.append(filtersPanel(A().filterByPeriod(trades, period)));
+  container.append(bar);
+
+  const body = el('div', 'stats-body');
+  container.append(body);
+  renderBody(body, trades);
+}
+
+function rerenderAll() {
+  if (lastRender) renderStats(lastRender.container, lastRender.trades);
+}
+
+function redrawBody() {
+  const body = document.querySelector('.stats-body');
+  if (body && lastRender) renderBody(body, lastRender.trades);
+}
+
+function renderBody(container, trades) {
   const F = window.format;
   const an = A();
   container.innerHTML = '';
   hideTip();
 
-  container.appendChild(periodBar(() => renderStats(container, trades)));
-
-  const inPeriod = an.filterByPeriod(trades, period);
+  const inPeriod = SF().apply(an.filterByPeriod(trades, period), theFilter());
   const closed = inPeriod.filter((t) => window.calc.isClosed(t)).sort((a, b) => a.num - b.num);
   const open = inPeriod.length - closed.length;
   const profits = closed.map((t) => window.calc.netProfitRub(t));
@@ -470,11 +637,19 @@ function renderStats(container, trades) {
   );
   container.appendChild(metrics);
 
+  if (filtersActive()) {
+    const note = el('div', 'filter-note');
+    note.textContent = `Фильтры оставили ${inPeriod.length} из ${an.filterByPeriod(trades, period).length} сделок`;
+    container.appendChild(note);
+  }
+
   if (!closed.length) {
     const div = el('div', 'empty');
-    div.textContent = period === 'all'
-      ? 'Нет закрытых сделок для статистики. Закройте сделку, указав цену выхода и дату закрытия.'
-      : 'В выбранном периоде нет закрытых сделок. Переключите период выше.';
+    div.textContent = filtersActive()
+      ? 'Под фильтры не подошла ни одна закрытая сделка. Снимите часть условий или нажмите «Сбросить».'
+      : period === 'all'
+        ? 'Нет закрытых сделок для статистики. Закройте сделку, указав цену выхода и дату закрытия.'
+        : 'В выбранном периоде нет закрытых сделок. Переключите период выше.';
     container.appendChild(div);
     return;
   }

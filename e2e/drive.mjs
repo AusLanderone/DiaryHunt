@@ -446,7 +446,10 @@ try {
   }));
   check('3 charts painted (equity, days, histogram)',
     widgets.canvases === 3 && widgets.painted, `got ${widgets.canvases} canvases, painted=${widgets.painted}`);
-  check('period chips rendered', widgets.chips.length === 4, widgets.chips.join('|'));
+  // four period chips plus the filters toggle, which shares the row
+  check('period chips rendered',
+    ['Всё время', 'Год', 'Квартал', 'Месяц'].every((t) => widgets.chips.includes(t))
+    && widgets.chips.length === 5, widgets.chips.join('|'));
   check('calendar heatmap marks both close days', widgets.calCells === 2, `got ${widgets.calCells}`);
   check('spread / holding / capital / weekday panels present',
     ['спреду входа', 'времени удержания', 'объёму позиции', 'дню недели']
@@ -558,6 +561,121 @@ try {
   for (const t of [trade1, trade3]) await page.evaluate((x) => window.api.trades.add(x), t);
   await page.reload();
   await page.waitForSelector('#btn-add', { timeout: 10000 });
+
+  console.log('\n[3e] stats filters');
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(300);
+  const closedNow = () => page.evaluate(() =>
+    document.querySelector('.metric .value')?.textContent.trim());
+  const totalNow = () => page.evaluate(() => {
+    const m = [...document.querySelectorAll('.metric')].find((x) => /суммарный профит/i.test(x.textContent));
+    return m ? m.querySelector('.value').textContent.replace(/\s/g, '') : '';
+  });
+  const openFilters = () => page.evaluate(() => {
+    const btn = document.querySelector('.stats-filters-toggle');
+    if (btn && !document.querySelector('.stats-filters')) btn.click();
+  });
+  const setRange = (field, value) => page.evaluate(([f, v]) => {
+    const input = document.querySelector(`[data-f="${f}"]`);
+    input.value = v;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  }, [field, value]);
+  const pick = (name, value) => page.evaluate(([n, v]) => {
+    const btn = [...document.querySelectorAll('.stats-filters .picker-btn')]
+      .find((b) => b.textContent.startsWith(n));
+    btn.click();
+    const row = [...document.querySelectorAll('.stats-filters .picker-row')]
+      .find((r) => r.querySelector('.pv').textContent === v);
+    row.querySelector('input').click();
+    document.body.click();
+  }, [name, value]);
+
+  const beforeFilters = await page.evaluate(() => ({
+    toggle: Boolean(document.querySelector('.stats-filters-toggle')),
+    panel: Boolean(document.querySelector('.stats-filters')),
+  }));
+  check('the stats tab offers filters and keeps them folded away',
+    beforeFilters.toggle && !beforeFilters.panel, JSON.stringify(beforeFilters));
+
+  await openFilters();
+  const controls = await page.evaluate(() => ({
+    pickers: [...document.querySelectorAll('.stats-filters .picker-btn')].map((b) => b.textContent),
+    fields: [...document.querySelectorAll('.stats-filters [data-f]')].map((i) => i.dataset.f),
+    exchanges: (() => {
+      // each click re-renders the bar, so the button has to be found again
+      const btn = () => [...document.querySelectorAll('.stats-filters .picker-btn')]
+        .find((b) => b.textContent.startsWith('Биржа'));
+      btn().click();
+      const vals = [...document.querySelectorAll('.stats-filters .picker-row .pv')].map((v) => v.textContent);
+      btn().click();
+      return vals;
+    })(),
+  }));
+  check('filters cover ticker, tag, exchange and weekday',
+    ['Тикер', 'Тег', 'Биржа', 'День недели'].every((n) => controls.pickers.some((p) => p.startsWith(n))),
+    controls.pickers.join('|'));
+  check('filters cover the date range, the size and the three spreads',
+    ['from', 'to', 'size.min', 'size.max', 'entrySpread.min', 'entrySpread.max',
+      'exitSpread.min', 'exitSpread.max', 'collected.min', 'collected.max']
+      .every((f) => controls.fields.includes(f)), controls.fields.join('|'));
+  check('the exchange picker offers the exchanges the diary trades on',
+    controls.exchanges.includes('MOEX') && controls.exchanges.includes('FOREX'),
+    controls.exchanges.join('|'));
+  // an unfolded picker must hang over the page, not be clipped by its panel
+  const panelBox = await page.evaluate(() => {
+    if (!document.querySelector('.stats-filters .picker-panel')) {
+      [...document.querySelectorAll('.stats-filters .picker-btn')]
+        .find((b) => b.textContent.startsWith('Биржа')).click();
+    }
+    const p = document.querySelector('.stats-filters .picker-panel');
+    const r = p.getBoundingClientRect();
+    const under = document.elementFromPoint(r.left + r.width / 2, r.top + 12);
+    return { h: Math.round(r.height), w: Math.round(r.width), inside: p.contains(under) };
+  });
+  await page.screenshot({ path: path.join(SHOT, '05c-stats-filter-picker.png') });
+  check('an unfolded picker is drawn in full, on top of the page',
+    panelBox.h > 40 && panelBox.w > 80 && panelBox.inside, JSON.stringify(panelBox));
+  await page.evaluate(() => document.body.click());
+
+  // #3 (SILV) is the only trade left once the ticker is picked
+  await pick('Тикер', 'SILV');
+  check('picking a ticker narrows the whole tab', (await closedNow()) === '1', `got ${await closedNow()}`);
+  check('and the profit is that trade alone', norm(await totalNow()).includes('3923,97'), await totalNow());
+  const filterBadge = await page.evaluate(() => document.querySelector(".stats-filters-toggle").textContent);
+  check('the filter button says how many windows are on', /1/.test(filterBadge), filterBadge);
+  await page.evaluate(() => document.querySelector('.stats-filters .reset').click());
+  check('«Сбросить» brings every trade back', (await closedNow()) === '2', `got ${await closedNow()}`);
+
+  // #1 ties up 3,95 млн a leg, #3 2,87 млн
+  await openFilters();
+  await setRange('size.min', '3000000');
+  check('a size window keeps the bigger trade only',
+    (await closedNow()) === '1' && norm(await totalNow()).includes('1044,40'),
+    `${await closedNow()} / ${await totalNow()}`);
+  // typing must not knock the caret out of the field it is being typed into
+  const stillFocused = await page.evaluate(() => {
+    const input = document.querySelector('[data-f="size.min"]');
+    input.focus();
+    input.value = '30000000';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return document.activeElement === document.querySelector('[data-f="size.min"]');
+  });
+  check('a filter field keeps the focus while it is being typed in', stillFocused === true);
+  await page.waitForTimeout(100);
+  const noneLeft = await page.evaluate(() => document.querySelector('#view .empty')?.textContent || '');
+  check('a window that matches nothing says so',
+    /фильтр/i.test(noneLeft), noneLeft);
+  await page.evaluate(() => document.querySelector('.stats-filters .reset').click());
+
+  // entry spreads: #1 is 0,19% and #3 is 0,75%, measured by size not by sign
+  await openFilters();
+  await setRange('entrySpread.min', '0,5');
+  check('an entry-spread window reads the spread by size, comma decimals and all',
+    (await closedNow()) === '1' && norm(await totalNow()).includes('3923,97'),
+    `${await closedNow()} / ${await totalNow()}`);
+  await page.evaluate(() => document.querySelector('.stats-filters .reset').click());
+  await page.screenshot({ path: path.join(SHOT, '05b-stats-filters.png'), fullPage: true });
+  check('the reset leaves the tab as it was', (await closedNow()) === '2', `got ${await closedNow()}`);
 
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());

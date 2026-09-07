@@ -124,45 +124,90 @@ function chartCard(title, cls, cfg) {
 
 // ---------- equity curve (with the deepest drawdown marked) ----------
 
-function drawEquity(canvas, points, dates) {
+// The curve answers when pointed at: every node carries the day it belongs to,
+// what the diary had made by then, and what that trade brought.
+// nodes: [{ date, total, profit, num, ticker }]
+function drawEquity(canvas, nodes) {
   const padL = 56, padR = 16, padTop = 16, padBot = 30;
-  const { ctx, W, H } = setupCanvas(canvas, 320);
-  if (!points.length) return;
-
-  const min = Math.min(0, ...points), max = Math.max(0, ...points);
-  const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, points.length - 1);
-  const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min, max });
   const pos = CSS('--pos') || '#46c46a';
+  const neg = CSS('--neg') || '#f26d78';
   const muted = CSS('--muted') || '#8b95a6';
+  const line = CSS('--line') || '#262d38';
 
-  // area fill under the curve
-  const grad = ctx.createLinearGradient(0, padTop, 0, H - padBot);
-  grad.addColorStop(0, 'rgba(70,196,106,0.22)');
-  grad.addColorStop(1, 'rgba(70,196,106,0.01)');
-  ctx.beginPath();
-  ctx.moveTo(x(0), y(0));
-  points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
-  ctx.lineTo(x(points.length - 1), y(0));
-  ctx.closePath();
-  ctx.fillStyle = grad; ctx.fill();
+  function render(hoverIdx) {
+    const { ctx, W, H } = setupCanvas(canvas, 320);
+    if (!nodes.length) return {};
+    const points = nodes.map((n) => n.total);
 
-  // the line
-  ctx.strokeStyle = pos; ctx.lineWidth = 2; ctx.lineJoin = 'round';
-  ctx.beginPath();
-  points.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
-  ctx.stroke();
+    const min = Math.min(0, ...points), max = Math.max(0, ...points);
+    const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, points.length - 1);
+    const y = valueAxis(ctx, { W, H, padL, padR, padTop, padBot, min, max });
 
-  // X axis: date labels (horizontal), thinned out when crowded
-  ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
-  const step = labelStep(points.length, W - padL - padR, 52);
-  for (let i = 0; i < points.length; i++) {
-    if (i % step !== 0 && i !== points.length - 1) continue;
-    ctx.fillText(ddmm(dates[i] || ''), x(i), H - padBot + 8);
+    // area fill under the curve
+    const grad = ctx.createLinearGradient(0, padTop, 0, H - padBot);
+    grad.addColorStop(0, 'rgba(70,196,106,0.22)');
+    grad.addColorStop(1, 'rgba(70,196,106,0.01)');
+    ctx.beginPath();
+    ctx.moveTo(x(0), y(0));
+    points.forEach((v, i) => ctx.lineTo(x(i), y(v)));
+    ctx.lineTo(x(points.length - 1), y(0));
+    ctx.closePath();
+    ctx.fillStyle = grad; ctx.fill();
+
+    // the line
+    ctx.strokeStyle = pos; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    points.forEach((v, i) => (i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v))));
+    ctx.stroke();
+
+    // X axis: date labels (horizontal), thinned out when crowded
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = muted;
+    const step = labelStep(points.length, W - padL - padR, 52);
+    for (let i = 0; i < points.length; i++) {
+      if (i % step !== 0 && i !== points.length - 1) continue;
+      ctx.fillText(ddmm(nodes[i].date || ''), x(i), H - padBot + 8);
+    }
+
+    // the node under the pointer: a guide down to the axis and a ring on it
+    if (hoverIdx >= 0 && hoverIdx < points.length) {
+      const hx = x(hoverIdx), hy = y(points[hoverIdx]);
+      ctx.strokeStyle = line; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(hx, padTop); ctx.lineTo(hx, H - padBot); ctx.stroke();
+      ctx.fillStyle = nodes[hoverIdx].profit >= 0 ? pos : neg;
+      ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = CSS('--surface') || '#12161d';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(hx, hy, 5, 0, Math.PI * 2); ctx.stroke();
+    }
+
+    // final point marker
+    ctx.fillStyle = pos;
+    ctx.beginPath(); ctx.arc(x(points.length - 1), y(points[points.length - 1]), 3.5, 0, Math.PI * 2); ctx.fill();
+
+    return { W, step: (W - padL - padR) / Math.max(1, points.length - 1) };
   }
 
-  // final point marker
-  ctx.fillStyle = pos;
-  ctx.beginPath(); ctx.arc(x(points.length - 1), y(points[points.length - 1]), 3.5, 0, Math.PI * 2); ctx.fill();
+  let geom = render(-1);
+
+  // the nearest node, not the one to the left: the curve is read by its points
+  canvas.onmousemove = (e) => {
+    if (!nodes.length) return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const span = rect.width - padL - padR;
+    const idx = Math.round(((mx - padL) / Math.max(1, span)) * (nodes.length - 1));
+    if (idx < 0 || idx >= nodes.length || mx < padL - 20 || mx > rect.width - padR + 20) {
+      canvas.onmouseleave();
+      return;
+    }
+    const n = nodes[idx];
+    geom = render(idx);
+    const F = window.format;
+    const title = `${ddmm(n.date)}${n.ticker ? ' · ' + n.ticker : ''}${n.num ? ' №' + n.num : ''}`;
+    showTip(tipBody(title, n.total,
+      `сделка ${n.profit >= 0 ? '+' : ''}${F.fmtRub(n.profit)}`), e);
+  };
+  canvas.onmouseleave = () => { hideTip(); geom = render(-1); };
 }
 
 // ---------- vertical bars: profit per day ----------
@@ -952,7 +997,11 @@ function renderBody(container, trades) {
     // full width: it reads by shape rather than by value
     equity: () => {
       const eq = chartCard('Кривая капитала — накопительный профит, ₽');
-      draw(() => drawEquity(eq.canvas, cumulative, dates));
+      const nodes = closed.map((t, i) => ({
+        date: t.closeDate, total: cumulative[i], profit: profits[i],
+        num: t.num, ticker: t.ticker,
+      }));
+      draw(() => drawEquity(eq.canvas, nodes));
       return eq.box;
     },
     days: () => {

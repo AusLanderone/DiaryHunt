@@ -339,7 +339,11 @@ function calendarWidget(map) {
 
 function breakdownPanel(title, groups, opts = {}) {
   const F = window.format;
-  const rows = opts.keepEmpty ? groups : groups.filter((g) => g.count > 0);
+  // A band the reader set by hand is theirs and stays on the chart even when
+  // nothing landed in it — a widget that quietly answers with fewer bands than
+  // were asked for reads as a bug. Bands the app derives from the trades
+  // themselves (weekday, ticker, tag) still drop the empty ones.
+  const rows = (opts.keepEmpty || opts.cfg) ? groups : groups.filter((g) => g.count > 0);
   const panel = card(title, null, opts.cfg);
   if (!rows.length) {
     const e = el('div', 'panel-empty'); e.textContent = 'нет данных';
@@ -352,7 +356,9 @@ function breakdownPanel(title, groups, opts = {}) {
     const bl = el('div', 'bl');
     const name = el('div', 'name'); name.textContent = g.label;
     const meta = el('div', 'meta');
-    meta.textContent = `${g.count} шт · ${Math.round((g.wins / g.count) * 100)}% в плюс`;
+    meta.textContent = g.count
+      ? `${g.count} шт · ${Math.round((g.wins / g.count) * 100)}% в плюс`
+      : 'нет сделок';
     bl.append(name, meta);
     const track = el('div', 'bar-track');
     const fill = el('div', 'bar-fill ' + sign(g.profit));

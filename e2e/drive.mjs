@@ -782,6 +782,36 @@ try {
   check('the bands survive a restart', afterReload.join('|') === afterBands.join('|'),
     afterReload.join('|'));
 
+  // a band the reader asked for is drawn even when nothing landed in it —
+  // otherwise the widget silently answers with fewer bands than were set
+  await openGear('Профит по спреду входа');
+  await page.waitForSelector('.modal', { timeout: 5000 });
+  await page.evaluate(() => {
+    document.querySelector('.rf-add').click();
+    const inputs = [...document.querySelectorAll('.band-rows .br-num')];
+    inputs[0].value = '0,5';
+    inputs[0].dispatchEvent(new Event('input', { bubbles: true }));
+    inputs[1].value = '4';
+    inputs[1].dispatchEvent(new Event('input', { bubbles: true }));
+    [...document.querySelectorAll('.modal-buttons .btn')]
+      .find((b) => /\u0441\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c/i.test(b.textContent)).click();
+  });
+  await page.waitForTimeout(300);
+  const withEmpty = await page.evaluate(() => {
+    const cardEl = [...document.querySelectorAll('.card')]
+      .find((c) => /\u0441\u043f\u0440\u0435\u0434\u0443 \u0432\u0445\u043e\u0434\u0430/i.test(c.querySelector('.card-title').textContent));
+    return {
+      labels: [...cardEl.querySelectorAll('.brow .name')].map((n) => n.textContent),
+      metas: [...cardEl.querySelectorAll('.brow .meta')].map((n) => n.textContent),
+      clipped: cardEl.scrollHeight - cardEl.clientHeight,
+    };
+  });
+  check('every band that was set is drawn, empty ones included',
+    withEmpty.labels.length === 3 && /4/.test(withEmpty.labels[2]), withEmpty.labels.join('|'));
+  check('an empty band says so instead of counting nothing',
+    !withEmpty.metas.some((m) => /NaN/.test(m)), withEmpty.metas.join('|'));
+  check('and the card grows to hold every row', withEmpty.clipped <= 0, String(withEmpty.clipped));
+
   // nonsense in a row is refused, and the row says so
   await openGear('Профит по спреду входа');
   await page.waitForSelector('.modal', { timeout: 5000 });

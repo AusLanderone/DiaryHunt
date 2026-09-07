@@ -271,6 +271,27 @@ try {
   });
   check('search narrows the journal to matching trades', filtered.afterSearch === 1, JSON.stringify(filtered));
 
+  // typed the way a person types, one key at a time: the field has to survive
+  // its own re-render, or only the first letter ever lands
+  await page.click('.journal-bar .search');
+  await page.keyboard.type('silv', { delay: 30 });
+  const typedSearch = await page.evaluate(() => ({
+    value: document.querySelector('.journal-bar .search').value,
+    focused: document.activeElement === document.querySelector('.journal-bar .search'),
+    rows: document.querySelectorAll('.trade-row').length,
+    caret: document.querySelector('.journal-bar .search').selectionStart,
+  }));
+  check('every typed letter lands in the search field',
+    typedSearch.value === 'silv', JSON.stringify(typedSearch));
+  check('the field keeps the focus and the caret while it is typed in',
+    typedSearch.focused && typedSearch.caret === 4, JSON.stringify(typedSearch));
+  check('and the journal narrows as it goes', typedSearch.rows === 1, JSON.stringify(typedSearch));
+  await page.evaluate(() => {
+    const s = document.querySelector('.journal-bar .search');
+    s.value = '';
+    s.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
   // tag, ticker and type each keep or drop trades; the picker says which
   const pickerUi = await page.evaluate(() => {
     const openPicker = (name) => {

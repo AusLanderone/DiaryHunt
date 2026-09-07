@@ -146,7 +146,8 @@ function filterBar(trades) {
   search.type = 'search';
   search.placeholder = 'Поиск: тикер, тег, тип, комментарий';
   search.value = state.query;
-  search.oninput = () => { state.query = search.value; rerender(); };
+  // rows only: rebuilding the bar would take the field out from under the caret
+  search.oninput = () => { state.query = search.value; redrawRows(); };
   bar.appendChild(search);
 
   const chips = el('div', 'chips');
@@ -409,6 +410,32 @@ function totalBar(sum) {
 
 // ---------- entry point ----------
 
+// Everything below the bar: the month blocks and the footer total. It can be
+// redrawn on its own, which is what the search box does — rebuilding the whole
+// journal would destroy the very field being typed into, and only the first
+// letter would ever land.
+function fillRows(wrap) {
+  const visible = V().sortTrades(
+    V().filterTrades(ctx.trades, state),
+    state.sortKey, state.sortDir,
+  );
+
+  const scroll = wrap.querySelector('.journal-scroll');
+  scroll.innerHTML = '';
+  if (!visible.length) {
+    scroll.append(el('div', 'empty', 'Под фильтры ничего не подошло. Смените период или очистите поиск.'));
+  } else {
+    V().groupByMonth(visible).forEach((g) => scroll.append(monthBlock(g)));
+  }
+  wrap.replaceChild(totalBar(V().summarize(visible)), wrap.querySelector('.journal-total'));
+}
+
+function redrawRows() {
+  const wrap = ctx && ctx.container.querySelector('.journal');
+  if (wrap) fillRows(wrap);
+  else rerender();
+}
+
 function renderJournal(container, trades, handlers) {
   ctx = { container, trades, onEdit: handlers.onEdit, onDelete: handlers.onDelete };
   container.innerHTML = '';
@@ -419,21 +446,10 @@ function renderJournal(container, trades, handlers) {
   }
 
   const wrap = el('div', 'journal');
-  wrap.append(filterBar(trades), header());
-
-  const visible = V().sortTrades(
-    V().filterTrades(trades, state),
-    state.sortKey, state.sortDir,
-  );
-
-  const scroll = el('div', 'journal-scroll');
-  if (!visible.length) {
-    scroll.append(el('div', 'empty', 'Под фильтры ничего не подошло. Смените период или очистите поиск.'));
-  } else {
-    V().groupByMonth(visible).forEach((g) => scroll.append(monthBlock(g)));
-  }
-  wrap.append(scroll, totalBar(V().summarize(visible)));
+  wrap.append(filterBar(trades), header(),
+    el('div', 'journal-scroll'), el('div', 'journal-total'));
   container.append(wrap);
+  fillRows(wrap);
 }
 
 window.journal = { renderJournal };

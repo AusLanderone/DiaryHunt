@@ -501,13 +501,14 @@ try {
       cards: cards.length,
       overflow: view.scrollWidth - view.clientWidth,
       maxPerRow: Math.max(...rows.values()),
-      wide: cards.filter((c) => c.classList.contains('wide')).length,
+      wide: cards.filter((c) => c.getBoundingClientRect().width
+        > document.querySelector('.stats-grid').clientWidth * 0.9).length,
       metricsDisplay: getComputedStyle(document.querySelector('.metrics')).display,
     };
   });
   check('every widget is a card in one grid', layout.cards === 12, JSON.stringify(layout));
   check('cards share rows instead of stacking one per line', layout.maxPerRow >= 2, JSON.stringify(layout));
-  check('equity, calendar and the monthly table span the full row', layout.wide === 3, JSON.stringify(layout));
+  check('the equity curve runs the full width', layout.wide === 1, JSON.stringify(layout));
   check('metrics use the equal-tile grid', layout.metricsDisplay === 'grid', layout.metricsDisplay);
   check('stats page never scrolls sideways', layout.overflow <= 0, `overflow ${layout.overflow}px`);
 
@@ -956,7 +957,7 @@ try {
 
   const resetOrder = await page.evaluate(async () => {
     const btn = [...document.querySelectorAll('.period-bar .chip')]
-      .find((b) => /порядок/i.test(b.textContent));
+      .find((b) => /раскладк/i.test(b.textContent));
     if (!btn) return null;
     btn.click();
     return true;
@@ -966,6 +967,111 @@ try {
   const defaultAgain = await cardOrder();
   check('and that puts the cards back the way the app ships them',
     defaultAgain.join('|') === startOrder.join('|'), defaultAgain.join('|'));
+
+  console.log('\n[3h] sizing the widgets');
+  const gridShape = () => page.evaluate(() => {
+    const grid = document.querySelector('.stats-grid');
+    const gap = 14;
+    const tracks = getComputedStyle(grid).gridTemplateColumns.split(' ').map(parseFloat);
+    const cards = [...grid.children];
+    const cell = (grid.clientWidth - gap * (tracks.length - 1)) / tracks.length;
+    // a card's width has to be a whole number of cells, and its left edge has
+    // to sit on a column line — that is what "lined up" means here
+    const offGrid = cards.filter((c) => {
+      const w = c.getBoundingClientRect().width;
+      const span = (w + gap) / (cell + gap);
+      const left = c.getBoundingClientRect().left - grid.getBoundingClientRect().left;
+      const col = left / (cell + gap);
+      return Math.abs(span - Math.round(span)) > 0.06 || Math.abs(col - Math.round(col)) > 0.06;
+    }).map((c) => c.dataset.widget);
+    // cards that start on the same line have to end on the same line
+    const byTop = new Map();
+    cards.forEach((c) => {
+      const r = c.getBoundingClientRect();
+      const key = Math.round(r.top);
+      if (!byTop.has(key)) byTop.set(key, []);
+      byTop.get(key).push(Math.round(r.bottom));
+    });
+    const ragged = [...byTop.values()].filter((bottoms) => new Set(bottoms).size > 1).length;
+    return {
+      tracks,
+      equalTracks: new Set(tracks.map((t) => Math.round(t))).size === 1,
+      offGrid,
+      ragged,
+      spans: cards.map((c) => `${c.dataset.widget}:${getComputedStyle(c).gridColumn}`),
+    };
+  });
+
+  const shape = await gridShape();
+  check('the grid is a raster of equal columns',
+    shape.tracks.length >= 2 && shape.equalTracks, JSON.stringify(shape.tracks));
+  check('every card sits on that raster, whole cells wide',
+    shape.offGrid.length === 0, shape.offGrid.join('|'));
+  check('cards that share a row end where each other end — no ragged edges',
+    shape.ragged === 0, String(shape.ragged));
+  const tiling = await page.evaluate(() => {
+    const grid = document.querySelector('.stats-grid');
+    const gw = grid.getBoundingClientRect().width;
+    const bands = new Map();
+    [...grid.children].forEach((c) => {
+      const r = c.getBoundingClientRect();
+      const key = Math.round(r.top);
+      bands.set(key, (bands.get(key) || 0) + r.width);
+    });
+    // a band is full when its cards plus the gaps between them cover the width
+    return [...bands.entries()].map(([top, filled]) => {
+      const inBand = [...grid.children]
+        .filter((c) => Math.round(c.getBoundingClientRect().top) === top).length;
+      return Math.round(gw - (filled + 14 * (inBand - 1)));
+    });
+  });
+  check('no band of cards leaves the row half empty',
+    tiling.every((short) => short <= 2), JSON.stringify(tiling));
+  // the equity card spans three rows of 120px with 14px between them
+  const tallCard = await page.evaluate(() =>
+    Math.round(document.querySelector('[data-widget="equity"]').getBoundingClientRect().height));
+  check('a card is exactly as tall as the rows it spans',
+    Math.abs(tallCard - 388) <= 4, `${tallCard}px, expected 388`);
+
+  // drag the corner of a one-column card across a whole cell
+  const grown = await page.evaluate(async () => {
+    const grid = document.querySelector('.stats-grid');
+    const box = [...grid.children].find((c) => c.dataset.widget === 'fees');
+    const grip = box.querySelector('.card-resize');
+    const r = grip.getBoundingClientRect();
+    const cell = (grid.clientWidth - 14 * 2) / 3 + 14;
+    const opts = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, bubbles: true, cancelable: true });
+    grip.dispatchEvent(new PointerEvent('pointerdown', opts(r.left, r.top)));
+    grip.dispatchEvent(new PointerEvent('pointermove', opts(r.left + cell, r.top)));
+    grip.dispatchEvent(new PointerEvent('pointerup', opts(r.left + cell, r.top)));
+    await new Promise((res) => setTimeout(res, 250));
+    const after = document.querySelector('[data-widget="fees"]');
+    return getComputedStyle(after).gridColumn;
+  });
+  check('a card dragged by its corner takes another column',
+    /span 2/.test(grown), grown);
+
+  await page.reload();
+  await page.waitForSelector('#tab-stats', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(400);
+  const keptSize = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('[data-widget="fees"]')).gridColumn);
+  check('the size survives a restart', /span 2/.test(keptSize), keptSize);
+  // a hand-made layout can leave a card shorter than its neighbour — what it
+  // must not do is leave a card off the raster or a row half empty
+  const stillTidy = await gridShape();
+  check('and the raster still holds after a resize',
+    stillTidy.offGrid.length === 0, stillTidy.offGrid.join('|'));
+  await page.screenshot({ path: path.join(SHOT, '05i-widget-sizes.png'), fullPage: true });
+
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
+    .find((b) => /раскладк/i.test(b.textContent)).click());
+  await page.waitForTimeout(400);
+  const backToDefault = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('[data-widget="fees"]')).gridColumn);
+  check('«Раскладка по умолчанию» puts the sizes back too',
+    /span 1/.test(backToDefault), backToDefault);
 
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());

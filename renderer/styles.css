@@ -512,21 +512,37 @@ header {
 .metric .value.neg { color: var(--neg); }
 
 /* one widget = one card; `wide` spans the whole row */
+/* One raster for the whole tab: a fixed number of equal columns and rows of a
+   known height. Every card spans whole cells, so they line up with each other
+   however they are resized, and a row is as tall as its tallest card rather
+   than leaving a ragged edge. Rows may grow past the unit — content is never
+   cut off to keep the grid tidy. */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
-  align-items: start;
+  grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+  grid-auto-rows: minmax(var(--unit, 120px), auto);
+  /* dense: once a card is resized by hand the tiling no longer works out on its
+     own, so a hole left in a row is filled by the next card that fits rather
+     than left as dead space */
+  grid-auto-flow: row dense;
+  align-items: stretch;
   gap: 14px;
   margin-bottom: 18px;
 }
 .card {
-  min-width: 0;
+  min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px 16px 16px;
 }
-.card.wide { grid-column: 1 / -1; }
+/* A chart fills the room its card has. The explicit height matters: a canvas
+   carries an intrinsic size from its width/height attributes, and with `auto`
+   grid rows that size would feed back into the track and grow the card on every
+   redraw. Pinned small, the row is decided by the card's span; flex-grow then
+   gives the canvas the whole card. */
+.card > canvas { flex: 1 1 90px; height: 90px; min-height: 90px; }
 .card-title {
   margin: 0 0 10px;
   font-size: 12px; font-weight: 600; letter-spacing: 0.05em;
@@ -1117,7 +1133,8 @@ canvas { display: block; width: 100%; }
   font-family: var(--mono); font-variant-numeric: tabular-nums;
   font-size: 22px; font-weight: 600; color: var(--text);
 }
-.fee-lines { display: flex; flex-direction: column; }
+/* pushed to the foot of the card, so a tall card reads as full rather than empty */
+.fee-lines { display: flex; flex-direction: column; margin-top: auto; }
 .fee-lines .fl {
   display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
   padding: 4px 0; font-size: 12.5px;
@@ -1125,3 +1142,17 @@ canvas { display: block; width: 100%; }
 .fee-lines .fl .k { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fee-lines .fl .v { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--text); }
 .fee-lines .fl.sep { margin-top: 6px; padding-top: 9px; border-top: 1px solid var(--line-soft); }
+
+/* the corner you drag to resize a card */
+.card-resize {
+  position: absolute; right: 2px; bottom: 2px;
+  width: 16px; height: 16px;
+  cursor: nwse-resize;
+  opacity: .35; transition: opacity .12s ease;
+  background:
+    linear-gradient(135deg, transparent 45%, var(--muted-2) 45%, var(--muted-2) 55%, transparent 55%),
+    linear-gradient(135deg, transparent 70%, var(--muted-2) 70%, var(--muted-2) 80%, transparent 80%);
+}
+.card:hover .card-resize { opacity: .85; }
+.card.resizing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.card.resizing .card-resize { opacity: 1; }

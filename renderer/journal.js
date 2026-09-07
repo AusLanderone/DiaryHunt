@@ -115,13 +115,6 @@ function setSpec(key, spec) {
   rerender();
 }
 
-function pickerLabel(dim, spec) {
-  const n = spec.values.length;
-  if (!n) return dim.label;
-  const what = n === 1 ? (spec.values[0] || dim.blank) : String(n);
-  return `${dim.label}: ${spec.mode === 'exclude' ? 'кроме ' : ''}${what}`;
-}
-
 // values actually present in the diary, with how many trades carry each
 function dimCounts(dim, trades) {
   const counts = new Map();
@@ -133,60 +126,15 @@ function dimCounts(dim, trades) {
 }
 
 function dimPicker(dim, trades) {
-  const spec = specOf(dim.key);
-  const box = el('div', 'picker');
-
-  const btn = el('button', 'chip picker-btn' + (spec.values.length ? ' active' : ''),
-    pickerLabel(dim, spec));
-  btn.title = `${dim.label}: оставить только выбранные или убрать их`;
-  btn.onclick = (e) => {
-    e.stopPropagation();
-    state.openPicker = state.openPicker === dim.key ? null : dim.key;
-    rerender();
-  };
-  box.appendChild(btn);
-  if (state.openPicker === dim.key) box.appendChild(pickerPanel(dim, trades, spec));
-  return box;
-}
-
-function pickerPanel(dim, trades, spec) {
-  const panel = el('div', 'picker-panel');
-  panel.onclick = (e) => e.stopPropagation();
-
-  const modes = el('div', 'picker-modes');
-  [['include', 'Оставить'], ['exclude', 'Убрать']].forEach(([mode, label]) => {
-    const b = el('button', 'chip mini' + (spec.mode === mode ? ' active' : ''), label);
-    b.title = mode === 'include' ? 'Показывать только отмеченные' : 'Прятать отмеченные';
-    b.onclick = () => setSpec(dim.key, { ...spec, mode });
-    modes.append(b);
+  return window.pickers.valuePicker({
+    name: dim.label,
+    blank: dim.blank,
+    rows: dimCounts(dim, trades),
+    spec: specOf(dim.key),
+    open: state.openPicker === dim.key,
+    onOpen: (open) => { state.openPicker = open ? dim.key : null; rerender(); },
+    onChange: (spec) => setSpec(dim.key, spec),
   });
-  panel.append(modes);
-
-  const list = el('div', 'picker-list');
-  const rows = dimCounts(dim, trades);
-  if (!rows.length) list.append(el('div', 'picker-empty', 'нет значений'));
-  rows.forEach(([value, count]) => {
-    const row = el('label', 'picker-row');
-    const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.checked = spec.values.includes(value);
-    cb.onchange = () => setSpec(dim.key, {
-      ...spec,
-      values: cb.checked ? [...spec.values, value] : spec.values.filter((v) => v !== value),
-    });
-    row.append(cb, el('span', 'pv' + (value ? '' : ' blank'), value || dim.blank),
-      el('span', 'pc', String(count)));
-    list.append(row);
-  });
-  panel.append(list);
-
-  const reset = el('button', 'btn ghost mini', 'Сбросить');
-  reset.disabled = !spec.values.length;
-  reset.onclick = () => setSpec(dim.key, { mode: 'include', values: [] });
-  const foot = el('div', 'picker-foot');
-  foot.append(reset);
-  panel.append(foot);
-  return panel;
 }
 
 // ---------- filter bar ----------

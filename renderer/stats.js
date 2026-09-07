@@ -62,19 +62,17 @@ const tipBody = (title, profit, sub) =>
 
 // ---------- canvas helpers ----------
 
-// Prepare a HiDPI canvas and hand back its context and its real size. The
-// canvas fills whatever room its card has, so the height comes from the layout
-// — `fallback` only covers the moment before there is one.
-function setupCanvas(canvas, fallback) {
+// prepare a HiDPI canvas of the given CSS height, return its 2d context and width
+function setupCanvas(canvas, H) {
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth || 900;
-  const H = Math.max(120, Math.round(canvas.clientHeight || fallback));
   canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.height = H + 'px';
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
   ctx.font = '10.5px "Cascadia Code", Consolas, monospace';
-  return { ctx, W, H };
+  return { ctx, W };
 }
 
 // horizontal gridlines + left-hand value labels; returns the value->y mapper
@@ -125,8 +123,8 @@ function chartCard(title, cls, cfg) {
 // ---------- equity curve (with the deepest drawdown marked) ----------
 
 function drawEquity(canvas, points, dates) {
-  const padL = 56, padR = 16, padTop = 16, padBot = 30;
-  const { ctx, W, H } = setupCanvas(canvas, 320);
+  const H = 320, padL = 56, padR = 16, padTop = 16, padBot = 30;
+  const { ctx, W } = setupCanvas(canvas, H);
   if (!points.length) return;
 
   const min = Math.min(0, ...points), max = Math.max(0, ...points);
@@ -168,13 +166,13 @@ function drawEquity(canvas, points, dates) {
 // ---------- vertical bars: profit per day ----------
 
 function drawBars(canvas, groups) {
-  const padL = 56, padR = 16, padTop = 18, padBot = 30;
+  const H = 260, padL = 56, padR = 16, padTop = 18, padBot = 30;
   const pos = CSS('--pos') || '#46c46a';
   const neg = CSS('--neg') || '#f26d78';
   const muted = CSS('--muted') || '#8b95a6';
 
   function render(hoverIdx) {
-    const { ctx, W, H } = setupCanvas(canvas, 260);
+    const { ctx, W } = setupCanvas(canvas, H);
     if (!groups.length) return {};
 
     const vals = groups.map((g) => g.profit);
@@ -231,13 +229,13 @@ function drawBars(canvas, groups) {
 // ---------- histogram: distribution of trade results ----------
 
 function drawHistogram(canvas, bins) {
-  const padL = 56, padR = 16, padTop = 18, padBot = 34;
+  const H = 260, padL = 56, padR = 16, padTop = 18, padBot = 34;
   const pos = CSS('--pos') || '#46c46a';
   const neg = CSS('--neg') || '#f26d78';
   const muted = CSS('--muted') || '#8b95a6';
 
   function render(hoverIdx) {
-    const { ctx, W, H } = setupCanvas(canvas, 260);
+    const { ctx, W } = setupCanvas(canvas, H);
     if (!bins.length) return {};
     const maxCount = Math.max(...bins.map((b) => b.count), 1);
     const y = valueAxis(ctx, {
@@ -665,86 +663,13 @@ async function saveOrder(next) {
   } catch { /* the view is already right; the disk write is best effort */ }
 }
 
-const WS = () => window.widgetSize;
-let cardSizes = null;
-
-const sizes = () => (cardSizes || (cardSizes = WS().normalize((window.appSettings || {}).widgetSize)));
-const sizesChanged = () => JSON.stringify(sizes()) !== JSON.stringify(WS().defaults());
-
-async function saveSizes(next) {
-  cardSizes = next;
-  window.appSettings = { ...(window.appSettings || {}), widgetSize: next };
-  try {
-    await window.api.config.setSettings({ widgetSize: next });
-  } catch { /* the view is already right; the disk write is best effort */ }
-}
-
-// How many columns the grid has right now, and how big one cell is — the raster
-// every card is measured against, so nothing ever lands between two columns.
-function gridMetrics(grid) {
-  const cols = WS().columnsFor(grid.clientWidth || 1000);
-  const gap = 14;
-  const cellW = (grid.clientWidth - gap * (cols - 1)) / cols + gap;
-  return { cols, gap, cellW, cellH: ROW_UNIT + gap };
-}
-
-const ROW_UNIT = 120;
-
-// Puts a card on the raster: its own size, clamped to the columns there are.
-function applySpan(box, id, cols) {
-  const span = WS().spanFor(sizes()[id], cols);
-  box.style.gridColumn = `span ${span.cols}`;
-  box.style.gridRow = `span ${span.rows}`;
-}
-
-// Dragging the corner resizes by whole cells, with the card itself following
-// the pointer so the size being chosen is the size on screen.
-function resizable(box, id) {
-  const grip = el('div', 'card-resize');
-  grip.title = 'Потянуть за угол, чтобы изменить размер';
-  box.appendChild(grip);
-
-  grip.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const grid = box.parentElement;
-    const metrics = gridMetrics(grid);
-    const start = { ...sizes()[id] };
-    const from = { x: e.clientX, y: e.clientY };
-    let next = start;
-    box.classList.add('resizing');
-    grip.setPointerCapture(e.pointerId);
-
-    const onMove = (ev) => {
-      next = WS().resize(start, ev.clientX - from.x, ev.clientY - from.y,
-        { cellW: metrics.cellW, cellH: metrics.cellH, maxCols: metrics.cols });
-      box.style.gridColumn = `span ${next.cols}`;
-      box.style.gridRow = `span ${next.rows}`;
-    };
-    const onUp = async () => {
-      grip.removeEventListener('pointermove', onMove);
-      grip.removeEventListener('pointerup', onUp);
-      box.classList.remove('resizing');
-      if (next.cols !== start.cols || next.rows !== start.rows) {
-        await saveSizes({ ...sizes(), [id]: next });
-      }
-      redrawBody();   // the charts redraw at whatever height they now have
-    };
-    grip.addEventListener('pointermove', onMove);
-    grip.addEventListener('pointerup', onUp);
-  });
-  return box;
-}
-
 const clearDropHints = () => document.querySelectorAll('.stats-grid .card')
   .forEach((c) => c.classList.remove('drop-target', 'dragging'));
 
 // A card is only draggable while its handle is held: otherwise every stray
 // drag over a chart would pick the whole widget up.
-function dragify(box, id, cols) {
+function dragify(box, id) {
   box.dataset.widget = id;
-  applySpan(box, id, cols);
-  resizable(box, id);
   const tools = box.querySelector('.card-tools');
   const handle = el('button', 'card-drag');
   handle.textContent = '⠿';
@@ -932,14 +857,13 @@ function periodBar(onChange) {
   });
 
   // only worth offering once something has actually been rearranged
-  if (orderChanged() || sizesChanged()) {
+  if (orderChanged()) {
     const back = el('button', 'chip order-reset');
-    back.textContent = 'Раскладка по умолчанию';
-    back.title = 'Вернуть виджетам исходный порядок и размеры';
+    back.textContent = 'Порядок по умолчанию';
+    back.title = 'Вернуть виджеты в том порядке, в котором их ставит приложение';
     back.onclick = async (e) => {
       e.stopPropagation();
       await saveOrder([...WO().DEFAULT_ORDER]);
-      await saveSizes(WS().defaults());
       rerenderAll();
     };
     bar.appendChild(back);
@@ -1065,7 +989,7 @@ function renderBody(container, trades) {
   const build = {
     // full width: it reads by shape rather than by value
     equity: () => {
-      const eq = chartCard('Кривая капитала — накопительный профит, ₽');
+      const eq = chartCard('Кривая капитала — накопительный профит, ₽', 'wide');
       draw(() => drawEquity(eq.canvas, cumulative, dates));
       return eq.box;
     },
@@ -1105,7 +1029,7 @@ function renderBody(container, trades) {
     },
     // full width: it already tiles its own months
     calendar: () => {
-      const cal = card('Календарь — профит по дням закрытия');
+      const cal = card('Календарь — профит по дням закрытия', 'wide');
       cal.appendChild(calendarWidget(an.calendarMap(closed)));
       return cal;
     },
@@ -1121,12 +1045,9 @@ function renderBody(container, trades) {
     months: () => monthlyTable(an.byMonth(closed)),
   };
 
-  const cols = WS().columnsFor(container.clientWidth || 1000);
-  grid.style.setProperty('--cols', String(cols));
-  grid.style.setProperty('--unit', ROW_UNIT + 'px');
   order().forEach((id) => {
     if (!build[id]) return;
-    grid.appendChild(dragify(build[id](), id, cols));
+    grid.appendChild(dragify(build[id](), id));
   });
 }
 

@@ -84,7 +84,7 @@ const COLUMNS = [
   { label: 'Ноги' },
   // shortened so the header stays one line beside the size / days / return columns
   { key: 'spread', label: 'Спред вх → вых', sortable: true, right: true },
-  { key: 'spreadFact', label: 'Собран', sortable: true, right: true },
+  { key: 'spreadFact', label: 'Спред', sortable: true, right: true },
   { key: 'size', label: 'Объём', sortable: true, right: true },
   { key: 'hold', label: 'Дней', sortable: true, right: true },
   { key: 'ret', label: 'Доходность', sortable: true, right: true },

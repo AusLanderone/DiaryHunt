@@ -108,3 +108,37 @@ test('every window it knows about has a title and a unit to show', () => {
     assert.ok(wr.SPECS[key].unit, key);
   }
 });
+
+// ---------- the band editor works on one row at a time ----------
+
+test('toDisplay hands the stored value over in the unit of the field', () => {
+  assert.deepStrictEqual(wr.toDisplay('spread', [0.005, 0.01, 0.02]), [0.5, 1, 2]);
+  assert.deepStrictEqual(wr.toDisplay('capital', [1e6, 3e6, 1e7]), [1, 3, 10]);
+  assert.deepStrictEqual(wr.toDisplay('hold', [0, 3, 7]), [0, 3, 7]);
+});
+
+test('fromDisplay takes what the rows hold and stores it', () => {
+  assert.deepStrictEqual(wr.fromDisplay('spread', ['0,5', '1', '2']), [0.005, 0.01, 0.02]);
+  assert.deepStrictEqual(wr.fromDisplay('capital', [1, 3, 10]), [1e6, 3e6, 1e7]);
+});
+
+test('an emptied row is a band the user is deleting', () => {
+  assert.deepStrictEqual(wr.fromDisplay('hold', ['0', '', '7']), [0, 7]);
+  assert.deepStrictEqual(wr.fromDisplay('hold', ['', '  ']), null);
+});
+
+test('a row with something unreadable in it refuses the whole save', () => {
+  assert.strictEqual(wr.fromDisplay('hold', ['0', 'три', '7']), null);
+  assert.strictEqual(wr.fromDisplay('hold', ['0', '-3']), null);
+});
+
+test('rows come back sorted and deduped whatever order they were typed in', () => {
+  assert.deepStrictEqual(wr.fromDisplay('hold', ['7', '0', '7', '3']), [0, 3, 7]);
+});
+
+test('a new band is suggested past the last one', () => {
+  assert.strictEqual(wr.suggestEdge('spread', [0.5, 1, 2]), 4);
+  assert.strictEqual(wr.suggestEdge('hold', [0, 3, 7]), 14);
+  assert.strictEqual(wr.suggestEdge('hold', [0]), 1);
+  assert.strictEqual(wr.suggestEdge('capital', []), 1);
+});

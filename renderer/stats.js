@@ -713,7 +713,9 @@ function resizable(box, id) {
     const from = { x: e.clientX, y: e.clientY };
     let next = start;
     box.classList.add('resizing');
-    grip.setPointerCapture(e.pointerId);
+    // capture keeps the drag alive when the pointer leaves the grip; it can
+    // refuse (a synthetic pointer, a released one) and the drag still works
+    try { grip.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
 
     const onMove = (ev) => {
       next = WS().resize(start, ev.clientX - from.x, ev.clientY - from.y,
@@ -976,13 +978,26 @@ function renderStats(container, trades) {
   renderBody(body, trades);
 }
 
+// Redrawing empties the tab for a moment, and an empty tab has nowhere to
+// scroll — the page would snap back to the top every time a card is resized or
+// a filter typed into. Where the reader is looking belongs to the reader.
+function keepingScroll(redraw) {
+  const scroller = document.querySelector('#view');
+  const top = scroller ? scroller.scrollTop : 0;
+  redraw();
+  if (!scroller || !top) return;
+  scroller.scrollTop = top;
+  // charts size themselves a frame later, which can move the page again
+  requestAnimationFrame(() => { scroller.scrollTop = top; });
+}
+
 function rerenderAll() {
-  if (lastRender) renderStats(lastRender.container, lastRender.trades);
+  if (lastRender) keepingScroll(() => renderStats(lastRender.container, lastRender.trades));
 }
 
 function redrawBody() {
   const body = document.querySelector('.stats-body');
-  if (body && lastRender) renderBody(body, lastRender.trades);
+  if (body && lastRender) keepingScroll(() => renderBody(body, lastRender.trades));
 }
 
 function renderBody(container, trades) {

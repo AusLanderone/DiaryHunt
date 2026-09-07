@@ -1065,6 +1065,29 @@ try {
     stillTidy.offGrid.length === 0, stillTidy.offGrid.join('|'));
   await page.screenshot({ path: path.join(SHOT, '05i-widget-sizes.png'), fullPage: true });
 
+  // Resizing redraws the tab, which must not throw the reader back to the top:
+  // sizing a card halfway down the page is otherwise unusable.
+  const scrolled = await page.evaluate(async () => {
+    const view = document.querySelector('#view');
+    view.scrollTop = Math.round((view.scrollHeight - view.clientHeight) / 2);
+    await new Promise((res) => setTimeout(res, 150));
+    const before = view.scrollTop;
+    const grid = document.querySelector('.stats-grid');
+    const box = [...grid.children].find((c) => c.dataset.widget === 'weekday');
+    const grip = box.querySelector('.card-resize');
+    const r = grip.getBoundingClientRect();
+    const cell = (grid.clientWidth - 14 * 2) / 3 + 14;
+    const opts = (x, y) => ({ pointerId: 1, clientX: x, clientY: y, bubbles: true, cancelable: true });
+    grip.dispatchEvent(new PointerEvent('pointerdown', opts(r.left, r.top)));
+    grip.dispatchEvent(new PointerEvent('pointermove', opts(r.left + cell, r.top)));
+    grip.dispatchEvent(new PointerEvent('pointerup', opts(r.left + cell, r.top)));
+    await new Promise((res) => setTimeout(res, 400));
+    return { before, after: document.querySelector('#view').scrollTop };
+  });
+  check('resizing a card leaves the page where the reader had it',
+    scrolled.before > 100 && Math.abs(scrolled.after - scrolled.before) <= 40,
+    JSON.stringify(scrolled));
+
   await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
     .find((b) => /раскладк/i.test(b.textContent)).click());
   await page.waitForTimeout(400);

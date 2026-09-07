@@ -51,3 +51,14 @@ test('move hands back a new list rather than rearranging the old one', () => {
   wo.move(before, 'a', 'c');
   assert.deepStrictEqual(before, ['a', 'b', 'c']);
 });
+
+test('the balances tab has an order of its own', () => {
+  const d = wo.BALANCES_ORDER;
+  assert.deepStrictEqual(d, ['curve', 'accounts', 'snapshots', 'flows']);
+  assert.strictEqual(new Set(d).size, d.length);
+});
+
+test('normalize works for that order the same way', () => {
+  assert.deepStrictEqual(wo.normalize(['flows'], wo.BALANCES_ORDER),
+    ['flows', 'curve', 'accounts', 'snapshots']);
+});

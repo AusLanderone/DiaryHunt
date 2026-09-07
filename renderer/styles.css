@@ -1156,3 +1156,9 @@ canvas { display: block; width: 100%; }
 .card:hover .card-resize { opacity: .85; }
 .card.resizing { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
 .card.resizing .card-resize { opacity: 1; }
+
+/* A table wider than its card scrolls inside it, never over its neighbour.
+   min-width: 0 is what makes that work — a flex item defaults to min-content
+   width and would otherwise push the card open instead of clipping. */
+.table-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+.table-scroll .mini-table { min-width: max-content; }

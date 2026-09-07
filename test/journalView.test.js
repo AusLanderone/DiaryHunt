@@ -307,3 +307,34 @@ test('filterTrades — the old single-value form still filters', () => {
   assert.deepStrictEqual(nums(jv.filterTrades(many(), { ...ALL, type: 'Крипто' })), [3, 4]);
   assert.deepStrictEqual(nums(jv.filterTrades(many(), { ...ALL, type: 'all' })), [1, 2, 3, 4]);
 });
+
+// ---------- the figures behind the size / hold / return columns ----------
+
+test('rowStats — a closed trade reports its size, its days and its return', () => {
+  // 100 × 10 and 101 × 10 at 80 ₽ = 160 800 ₽ over two legs, so 80 400 ₽ a leg;
+  // the long leg gained 1 × 10 = 10 $ = 800 ₽ with no fees
+  const s = jv.rowStats(trade({ openDate: '2026-08-10', closeDate: '2026-08-12' }));
+  assert.strictEqual(s.size, 80400);
+  assert.strictEqual(s.hold, 2);
+  assert.ok(Math.abs(s.ret - 800 / 80400) < 1e-12, `ret ${s.ret}`);
+});
+
+test('rowStats — an open trade has a size but no days and no return yet', () => {
+  const s = jv.rowStats(trade({ open: true }));
+  assert.strictEqual(s.size, 80400);
+  assert.strictEqual(s.hold, null);
+  assert.strictEqual(s.ret, null);
+});
+
+test('rowStats — the sort orders trades the way the columns read', () => {
+  const big = trade({ num: 1, openDate: '2026-08-01', closeDate: '2026-08-12' });
+  const small = trade({ num: 2, openDate: '2026-08-10', closeDate: '2026-08-11', legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 10, units: 10, exitPrice: 11, feeRub: 0 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 10, units: 10, exitPrice: 10, feeRub: 0 },
+  ] });
+  const byColumn = (key) => [big, small].slice()
+    .sort((a, b) => jv.rowStats(b)[key] - jv.rowStats(a)[key]).map((t) => t.num);
+  for (const key of ['size', 'hold', 'ret']) {
+    assert.deepStrictEqual(nums(jv.sortTrades([small, big], key, 'desc')), byColumn(key), key);
+  }
+});

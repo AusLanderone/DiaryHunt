@@ -34,7 +34,16 @@ const pct2 = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
 // the collected spread reads as a gain or a loss, so it carries its sign
 const pctSigned = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
   : (n > 0 ? '+' : '') + pct2(n));
+// arbitrage returns live in hundredths of a percent, so the column keeps a
+// third decimal — at two, every trade would read the same
+const pct3Signed = (n) => (n === null || n === undefined || Number.isNaN(n) ? '—'
+  : (n > 0 ? '+' : '') + (n * 100).toFixed(3).replace('.', ',') + '%');
 const rub0 = (n) => Math.round(n).toLocaleString('ru-RU') + ' ₽';
+// position-sized money in a narrow column: millions read faster than seven
+// digits, and the exact figure is one click away in the expanded trade
+const rubShort = (n) => (n === null || n === undefined ? '—'
+  : Math.abs(n) >= 1e6 ? (n / 1e6).toFixed(2).replace('.', ',') + ' млн ₽' : rub0(n));
+const days = (n) => (n === null || n === undefined ? '—' : `${n} д`);
 // whole dollars for position-sized numbers, two decimals for small ones
 const usd0 = (n) => {
   if (n === null || n === undefined) return '—';
@@ -73,8 +82,12 @@ const COLUMNS = [
   { key: 'ticker', label: 'Тикер', sortable: true },
   { label: 'Тип · Тег' },
   { label: 'Ноги' },
-  { key: 'spread', label: 'Спред вход → выход', sortable: true, right: true },
+  // shortened so the header stays one line beside the size / days / return columns
+  { key: 'spread', label: 'Спред вх → вых', sortable: true, right: true },
   { key: 'spreadFact', label: 'Собран', sortable: true, right: true },
+  { key: 'size', label: 'Объём', sortable: true, right: true },
+  { key: 'hold', label: 'Дней', sortable: true, right: true },
+  { key: 'ret', label: 'Дох.', sortable: true, right: true },
   { key: 'profit', label: 'Чистый', sortable: true, right: true },
   { label: '' },
 ];
@@ -298,6 +311,22 @@ function tradeRow(trade, c) {
     fact.append(el('span', 'sp-fact none', '—'));
   }
   row.append(fact);
+
+  // how big the trade was, how long it ran, what it returned — the same numbers
+  // the header sorts by, read from one place so the two can't disagree
+  const s = V().rowStats(trade);
+  const size = el('div', 'jc size', rubShort(s.size));
+  size.title = 'Объём позиции на одну ногу — сторона сделки, которую она реально занимает';
+  row.append(size);
+
+  const hold = el('div', 'jc hold' + (s.hold === null ? ' none' : ''), days(s.hold));
+  hold.title = 'Дней от открытия до закрытия';
+  row.append(hold);
+
+  const ret = el('div', 'jc ret');
+  ret.append(el('span', signCls(s.ret), pct3Signed(s.ret)));
+  ret.title = 'Чистая доходность на объём одной ноги';
+  row.append(ret);
 
   const money = el('div', 'jc money');
   if (closed) money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));

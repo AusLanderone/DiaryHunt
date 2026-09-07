@@ -679,6 +679,101 @@ try {
   await page.screenshot({ path: path.join(SHOT, '05b-stats-filters.png'), fullPage: true });
   check('the reset leaves the tab as it was', (await closedNow()) === '2', `got ${await closedNow()}`);
 
+  console.log('\n[3f] per-widget ranges');
+  const bandsOf = (title) => page.evaluate((t) => {
+    const cardEl = [...document.querySelectorAll('.card')]
+      .find((c) => c.querySelector('.card-title')?.textContent.includes(t));
+    return [...cardEl.querySelectorAll('.brow .name')].map((n) => n.textContent);
+  }, title);
+  const openGear = (title) => page.evaluate((t) => {
+    const cardEl = [...document.querySelectorAll('.card')]
+      .find((c) => c.querySelector('.card-title')?.textContent.includes(t));
+    cardEl.querySelector('.card-gear').click();
+  }, title);
+
+  const gears = await page.evaluate(() => [...document.querySelectorAll('.card')]
+    .filter((c) => c.querySelector('.card-gear'))
+    .map((c) => c.querySelector('.card-title').textContent));
+  const gearVisible = await page.evaluate(() => {
+    const g = document.querySelector('.card-gear');
+    const st = getComputedStyle(g);
+    return { opacity: Number(st.opacity), display: st.display, w: g.getBoundingClientRect().width };
+  });
+  check('the gear is visible without hovering for it',
+    gearVisible.opacity >= 0.2 && gearVisible.display !== 'none' && gearVisible.w >= 16,
+    JSON.stringify(gearVisible));
+  check('every widget with bands of its own carries a gear',
+    gears.length === 4
+    && gears.some((t) => /спреду входа/i.test(t)) && gears.some((t) => /времени удержания/i.test(t))
+    && gears.some((t) => /объёму позиции/i.test(t)) && gears.some((t) => /распределение/i.test(t)),
+    gears.join('|'));
+
+  const beforeBands = await bandsOf('Профит по спреду входа');
+  await openGear('Профит по спреду входа');
+  await page.waitForSelector('.modal', { timeout: 5000 });
+  await page.screenshot({ path: path.join(SHOT, '05e-widget-range-dialog.png') });
+  const dialog = await page.evaluate(() => ({
+    value: document.querySelector('[data-f="widget-range"]').value,
+    preview: document.querySelector('.range-preview')?.textContent || '',
+    buttons: [...document.querySelectorAll('.modal-buttons .btn')].map((b) => b.textContent),
+  }));
+  check('the dialog opens on the bands the widget is drawing now',
+    dialog.value === '0,5 1 2', dialog.value);
+  check('it previews the bands the numbers make',
+    /0,5/.test(dialog.preview) && /</.test(dialog.preview), dialog.preview);
+  check('it offers a way back to the app default',
+    dialog.buttons.some((b) => /умолчанию/i.test(b)), dialog.buttons.join('|'));
+
+  // one edge at 0,5%: #1 entered on 0,19% and #3 on 0,75%, so they split
+  const typed = await page.evaluate(() => {
+    const input = document.querySelector('[data-f="widget-range"]');
+    input.value = '0,5';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    return document.querySelector('.range-preview').textContent;
+  });
+  check('the preview follows what is being typed', /0,5/.test(typed) && !/1|2/.test(typed.replace(/0,5/g, '')), typed);
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForTimeout(300);
+  const afterBands = await bandsOf('Профит по спреду входа');
+  check('the widget redraws on the bands that were set',
+    afterBands.length === 2 && afterBands.join('|') !== beforeBands.join('|')
+    && afterBands.every((b) => /0,5/.test(b)), `${beforeBands.join('|')} -> ${afterBands.join('|')}`);
+
+  // the setting belongs to the diary, not to the session
+  await page.reload();
+  await page.waitForSelector('#tab-stats', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(400);
+  const afterReload = await bandsOf('Профит по спреду входа');
+  check('the bands survive a restart', afterReload.join('|') === afterBands.join('|'),
+    afterReload.join('|'));
+
+  // nonsense is refused rather than wiping the widget
+  await openGear('Профит по спреду входа');
+  await page.waitForSelector('.modal', { timeout: 5000 });
+  const refused = await page.evaluate(() => {
+    const input = document.querySelector('[data-f="widget-range"]');
+    input.value = 'сколько-нибудь';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    [...document.querySelectorAll('.modal-buttons .btn')]
+      .find((b) => /сохранить/i.test(b.textContent)).click();
+    return { open: Boolean(document.querySelector('.modal')),
+      bad: Boolean(document.querySelector('[data-f="widget-range"].bad')) };
+  });
+  check('a field with no numbers in it saves nothing',
+    refused.open && refused.bad, JSON.stringify(refused));
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /умолчанию/i.test(b.textContent)).click());
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: path.join(SHOT, '05d-widget-ranges.png'), fullPage: true });
+  check('«По умолчанию» puts the app bands back',
+    (await bandsOf('Профит по спреду входа')).join('|') === beforeBands.join('|'),
+    (await bandsOf('Профит по спреду входа')).join('|'));
+
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());
   await page.evaluate(() => document.querySelector('#btn-add').click());

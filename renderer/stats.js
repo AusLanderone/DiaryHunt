@@ -101,16 +101,19 @@ function labelStep(count, usableWidth, minPx) {
 // One card = one widget. Everything the page renders is a card in .stats-grid,
 // so the layout stays even no matter how many widgets are on screen; `wide`
 // makes a card span the full row (charts that need the horizontal room).
-function card(title, cls) {
+// `cfg` names the widget's own bands in src/widgetRanges.js — the card then
+// carries a gear that opens them for editing.
+function card(title, cls, cfg) {
   const box = el('section', 'card' + (cls ? ' ' + cls : ''));
   const h = el('h3', 'card-title');
   h.textContent = title;
   box.appendChild(h);
+  if (cfg) box.appendChild(gearButton(cfg));
   return box;
 }
 
-function chartCard(title, cls) {
-  const box = card(title, cls);
+function chartCard(title, cls, cfg) {
+  const box = card(title, cls, cfg);
   const canvas = document.createElement('canvas');
   box.appendChild(canvas);
   return { box, canvas };
@@ -337,7 +340,7 @@ function calendarWidget(map) {
 function breakdownPanel(title, groups, opts = {}) {
   const F = window.format;
   const rows = opts.keepEmpty ? groups : groups.filter((g) => g.count > 0);
-  const panel = card(title);
+  const panel = card(title, null, opts.cfg);
   if (!rows.length) {
     const e = el('div', 'panel-empty'); e.textContent = 'нет данных';
     panel.append(e);
@@ -405,6 +408,101 @@ const PERIODS = [
   ['month', 'Месяц'],
 ];
 let period = 'all';
+
+// ---------- per-widget bands ----------
+
+// What the app ships is a starting point: a diary's own scale decides what
+// counts as a wide spread or a big trade, so every banded widget carries a gear.
+// The values live in the settings, so they survive a restart and ride along in
+// the DB export.
+const WR = () => window.widgetRanges;
+let bands = null;
+
+const ranges = () => (bands || (bands = WR().normalize((window.appSettings || {}).widgets)));
+
+async function saveRanges(next) {
+  bands = next;
+  window.appSettings = { ...(window.appSettings || {}), widgets: next };
+  try {
+    await window.api.config.setSettings({ widgets: next });
+  } catch { /* the view is already right; the disk write is best effort */ }
+}
+
+// The labels a set of edges produces, asked of the widget that draws them —
+// no second definition of what a band is called.
+function bandPreview(key, value) {
+  if (key === 'bins') return `${value} ${WR().SPECS.bins.unit}`;
+  const of = { spread: A().spreadBuckets, hold: A().holdingBuckets, capital: A().capitalBuckets }[key];
+  return of([], value).map((b) => b.label).join(' · ');
+}
+
+function gearButton(key) {
+  const btn = el('button', 'card-gear');
+  btn.textContent = '⚙';
+  btn.title = `Настроить диапазоны: ${WR().SPECS[key].title}`;
+  btn.onclick = (e) => { e.stopPropagation(); openRangeDialog(key); };
+  return btn;
+}
+
+function openRangeDialog(key) {
+  const spec = WR().SPECS[key];
+  const isCount = spec.kind === 'count';
+
+  const input = el('input', 'range-input');
+  input.type = 'text';
+  input.dataset.f = 'widget-range';
+  input.value = WR().format(key, ranges()[key]);
+
+  const preview = el('div', 'range-preview');
+  const field = el('label', 'range-field');
+  const caption = el('span', 'rf-label');
+  caption.textContent = isCount ? `Столбцов, ${spec.unit}` : `Границы полос, ${spec.unit}`;
+  field.append(caption, input);
+
+  const redrawPreview = () => {
+    const parsed = WR().parse(key, input.value);
+    input.classList.toggle('bad', parsed === null);
+    preview.textContent = parsed === null
+      ? 'Ни одного числа — впишите значения через пробел'
+      : bandPreview(key, parsed);
+  };
+  input.oninput = redrawPreview;
+  redrawPreview();
+
+  const modal = el('div', 'modal');
+  const title = el('h2'); title.textContent = spec.title;
+  const hint = el('p', 'hint'); hint.textContent = spec.hint;
+  const buttons = el('div', 'modal-buttons');
+  modal.append(title, hint, field, preview, buttons);
+
+  const backdrop = el('div', 'modal-backdrop');
+  backdrop.append(modal);
+
+  const toDefault = el('button', 'btn ghost');
+  toDefault.textContent = 'По умолчанию';
+  toDefault.onclick = () => {
+    input.value = WR().format(key, WR().defaults()[key]);
+    redrawPreview();
+  };
+  const cancel = el('button', 'btn ghost');
+  cancel.textContent = 'Отмена';
+  cancel.onclick = () => backdrop.remove();
+  const save = el('button', 'btn primary');
+  save.textContent = 'Сохранить';
+  save.onclick = async () => {
+    const parsed = WR().parse(key, input.value);
+    if (parsed === null) { redrawPreview(); input.focus(); return; }
+    await saveRanges({ ...ranges(), [key]: parsed });
+    backdrop.remove();
+    redrawBody();
+  };
+  buttons.append(toDefault, cancel, save);
+
+  backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.remove(); });
+  document.body.appendChild(backdrop);
+  input.focus();
+  input.select();
+}
 
 // ---------- extra filters ----------
 
@@ -671,9 +769,9 @@ function renderBody(container, trades) {
   grid.appendChild(day.box);
   draw(() => drawBars(day.canvas, byDay));
 
-  const hist = chartCard('Распределение результатов — сделок в диапазоне');
+  const hist = chartCard('Распределение результатов — сделок в диапазоне', null, 'bins');
   grid.appendChild(hist.box);
-  draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, Math.min(10, Math.max(4, closed.length)))));
+  draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, ranges().bins)));
 
   // calendar — full width, it already tiles its own months
   const cal = card('Календарь — профит по дням закрытия', 'wide');
@@ -681,14 +779,16 @@ function renderBody(container, trades) {
   grid.appendChild(cal);
 
   // breakdowns
+  const R = ranges();
   const byProfit = (a, b) => b.profit - a.profit;
   const byTicker = an.groupBy(closed, (t) => t.ticker).sort(byProfit);
   const byTag = an.groupBy(closed, (t) => t.tag || '—').sort(byProfit);
 
   grid.append(
-    breakdownPanel('Профит по спреду входа', an.spreadBuckets(closed)),
-    breakdownPanel('Профит по времени удержания', an.holdingBuckets(closed)),
-    breakdownPanel('Профит по объёму позиции — средняя нога', an.capitalBuckets(closed)),
+    breakdownPanel('Профит по спреду входа', an.spreadBuckets(closed, R.spread), { cfg: 'spread' }),
+    breakdownPanel('Профит по времени удержания', an.holdingBuckets(closed, R.hold), { cfg: 'hold' }),
+    breakdownPanel('Профит по объёму позиции — средняя нога',
+      an.capitalBuckets(closed, R.capital), { cfg: 'capital' }),
     breakdownPanel('Профит по дню недели', an.byWeekday(closed)),
     breakdownPanel('Профит по тикеру', byTicker),
     breakdownPanel('Профит по тегу', byTag),

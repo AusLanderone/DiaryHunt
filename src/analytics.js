@@ -85,19 +85,26 @@ function holdingDays(trade) {
   return Math.round((asUTC(trade.closeDate) - asUTC(trade.openDate)) / DAY);
 }
 
-const HOLD_BANDS = [
-  { label: 'В тот же день', max: 0 },
-  { label: '1–3 дня', max: 3 },
-  { label: '4–7 дней', max: 7 },
-  { label: 'Больше недели', max: Infinity },
-];
+const HOLD_EDGES = [0, 3, 7];
 
-function holdingBuckets(trades) {
-  const buckets = HOLD_BANDS.map((b) => ({ label: b.label, profit: 0, count: 0, wins: 0 }));
+// Each edge is the last day still inside its band: [0, 3, 7] reads as the same
+// day, up to three days, up to a week, and everything longer.
+function holdLabels(edges) {
+  const bands = edges.map((e, i) => (i === 0
+    ? (e === 0 ? 'В тот же день' : `до ${e} дн`)
+    : `${edges[i - 1] + 1}–${e} дн`));
+  bands.push(`> ${edges[edges.length - 1]} дн`);
+  return bands;
+}
+
+function holdingBuckets(trades, edges = HOLD_EDGES) {
+  const buckets = holdLabels(edges).map((label) => ({ label, profit: 0, count: 0, wins: 0 }));
   for (const t of closedOnly(trades)) {
     const d = holdingDays(t);
     if (d === null) continue;
-    const b = buckets[HOLD_BANDS.findIndex((band) => d <= band.max)];
+    let i = edges.findIndex((e) => d <= e);
+    if (i === -1) i = edges.length;
+    const b = buckets[i];
     const np = profitOf(t);
     b.profit += np; b.count += 1; if (np > 0) b.wins += 1;
   }

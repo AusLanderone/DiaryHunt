@@ -7,9 +7,11 @@
 // IIFE-scoped like the other shared modules.
 (function () {
 
+const VERSION = 2;           // bumped when `rows` stopped being a row span
 const MAX_COLS = 4;
 const MAX_ROWS = 8;
 const MIN_COL_WIDTH = 340;   // narrower than this and a card stops being readable
+const ROW_UNIT = 120;        // one cell of height, the step a card grows by
 
 // The sizes are chosen to TILE the raster in the default order: each band of
 // cards fills the width exactly and its members span the same rows, so no card
@@ -44,14 +46,25 @@ const usable = (size) => Boolean(size) && typeof size === 'object'
 
 // A saved size is taken as it is or not at all: half a size (no rows, say) is
 // a corrupt one, and guessing the other half would put a card somewhere nobody
-// asked for.
-function normalize(saved) {
+// asked for. Sizes saved by an older version are dropped altogether — `rows`
+// was a hard row span then and is a floor now, so the same numbers no longer
+// describe the same card.
+function normalize(saved, version) {
   const out = defaults();
+  if (version !== VERSION) return out;
   if (!saved || typeof saved !== 'object') return out;
   for (const key of Object.keys(out)) {
     if (usable(saved[key])) out[key] = { cols: saved[key].cols, rows: saved[key].rows };
   }
   return out;
+}
+
+// A card's floor in pixels: `rows` cells of the grid's unit. It is a MINIMUM,
+// never a cap — content taller than that grows the card, and its row-mates grow
+// with it. Height was once a hard row span, and any set of sizes but the
+// default turned the page into a ragged mosaic.
+function minHeight(size, unit = ROW_UNIT, gap = 14) {
+  return size.rows * unit + (size.rows - 1) * gap;
 }
 
 // How many columns the grid itself has at this width — the same raster every
@@ -75,7 +88,8 @@ function resize(start, dx, dy, metrics) {
   };
 }
 
-const _api = { DEFAULTS, MAX_COLS, MAX_ROWS, MIN_COL_WIDTH, defaults, normalize, columnsFor, spanFor, resize };
+const _api = { DEFAULTS, VERSION, MAX_COLS, MAX_ROWS, MIN_COL_WIDTH, ROW_UNIT,
+  defaults, normalize, columnsFor, spanFor, resize, minHeight };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.widgetSize = _api;
 })();

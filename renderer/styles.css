@@ -1001,7 +1001,9 @@ canvas { display: block; width: 100%; }
 /* the picker is shared with the journal, so its positioning is no longer
    scoped to the journal bar */
 .stats-bar { position: relative; z-index: 3; }
-.period-bar .stats-filters-toggle { margin-left: auto; }
+.period-bar .stats-filters-toggle, .period-bar .order-reset { margin-left: auto; }
+/* when both are there, only the first one is pushed across */
+.period-bar .order-reset + .stats-filters-toggle { margin-left: 0; }
 .period-bar .stats-filters-toggle.active { color: var(--text); border-color: var(--accent); }
 
 .stats-filters {
@@ -1034,7 +1036,6 @@ canvas { display: block; width: 100%; }
 /* ---------- per-widget bands ---------- */
 .card { position: relative; }
 .card-gear {
-  position: absolute; top: 10px; right: 10px;
   width: 22px; height: 22px; padding: 0;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid transparent; border-radius: 6px;
@@ -1090,3 +1091,22 @@ canvas { display: block; width: 100%; }
 }
 .br-step:hover { border-color: var(--accent); }
 .br-range { color: var(--muted-2); font-size: 12px; }
+
+/* ---------- moving the cards around ---------- */
+.card-tools {
+  position: absolute; top: 10px; right: 10px;
+  display: flex; align-items: center; gap: 2px;
+}
+.card-drag {
+  width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted-2);
+  font-size: 13px; line-height: 1; cursor: grab;
+  opacity: .45; transition: opacity .12s ease;
+}
+.card:hover .card-drag, .card-drag:focus-visible { opacity: 1; }
+.card-drag:hover { color: var(--text); border-color: var(--line); background: var(--surface-2); }
+.card-drag:active { cursor: grabbing; }
+.card.dragging { opacity: .5; }
+.card.drop-target { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }

@@ -153,7 +153,7 @@ header {
   /* № · дата · тикер · тип+тег · ноги · спред · собран · объём · дней · дох. ·
      чистый · действия — the fixed part has to clear 1280px minus the padding,
      so the journal never scrolls sideways in the default window */
-  --jcols: 40px 96px 78px 140px minmax(110px, 1fr) 136px 76px 84px 44px 66px 120px 84px;
+  --jcols: 40px 96px 78px 130px minmax(110px, 1fr) 128px 76px 84px 44px 90px 116px 84px;
   display: flex; flex-direction: column; height: 100%;
 }
 
@@ -219,12 +219,19 @@ header {
   flex: none;
   display: grid; grid-template-columns: var(--jcols); gap: 10px;
   padding: 8px 18px 8px 14px;
+  /* the same 3px a trade row spends on its state stripe, so the header's
+     columns sit exactly above the row's instead of 3px to their left */
+  border-left: 3px solid transparent;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
 }
 .journal-head .jh { display: flex; align-items: center; gap: 4px; min-width: 0; }
 .journal-head .jh.right { justify-content: flex-end; }
+.journal-head .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* «Собран» prints inside a pill — the header takes the pill's padding so the
+   two read as one column */
+.journal-head .jh-spreadFact { padding-right: 7px; }
 .journal-head .sortable { cursor: pointer; user-select: none; }
 .journal-head .sortable:hover { color: var(--text); }
 .journal-head .active { color: var(--accent); }
@@ -320,6 +327,9 @@ header {
   justify-content: flex-end;
   font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px;
 }
+/* both halves keep a box of their own, so entry and exit numbers stack down the
+   column whatever their sign or digit count */
+.trade-row .spread .sp-in, .trade-row .spread .sp-out { min-width: 48px; text-align: right; }
 .trade-row .spread .sp-in { color: var(--text); }
 .trade-row .spread .sp-arrow { color: var(--muted-2); }
 .trade-row .spread .sp-out { color: var(--muted); }

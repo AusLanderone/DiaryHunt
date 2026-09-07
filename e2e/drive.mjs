@@ -346,8 +346,10 @@ try {
       return r.getBoundingClientRect();
     };
     const heads = [...document.querySelectorAll('.journal-head .jh')];
+    // matched against the label alone, so an anchored pattern can tell the two
+    // spread columns apart without the sort arrow getting in the way
     const label = (re) => {
-      const h = heads.find((x) => re.test(x.textContent));
+      const h = heads.find((x) => re.test((x.querySelector('.lbl') || x).textContent));
       return h ? (h.querySelector('.lbl') || h) : null;
     };
     const row = document.querySelectorAll('.trade-row')[0];
@@ -365,11 +367,11 @@ try {
         edges: [...new Set([...document.querySelectorAll('.trade-row .' + cls)]
           .map((e) => Math.round(e.getBoundingClientRect().right)))],
       })),
-      right: [['спред вх', '.spread', 'right'], ['собран', '.sp-fact', 'right'],
-        ['объём', '.size', 'right'], ['дней', '.hold', 'right'],
-        ['доходность', '.ret', 'right'], ['чистый', '.money .sum', 'right']].map(gap),
-      left: [['№', '.num', 'left'], ['дата', '.date .d1', 'left'],
-        ['тикер', '.ticker .tk', 'left']].map(gap),
+      right: [['^спред вх', '.spread', 'right'], ['^спред$', '.sp-fact', 'right'],
+        ['^объём$', '.size', 'right'], ['^дней$', '.hold', 'right'],
+        ['^доходность$', '.ret', 'right'], ['^чистый$', '.money .sum', 'right']].map(gap),
+      left: [['^№$', '.num', 'left'], ['^дата$', '.date .d1', 'left'],
+        ['^тикер$', '.ticker .tk', 'left']].map(gap),
     };
   });
   check('right-aligned headers end where their numbers end',

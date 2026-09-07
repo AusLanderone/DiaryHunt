@@ -186,3 +186,59 @@ test('holdingBuckets — the bands are the ones asked for', () => {
   assert.strictEqual(buckets[2].count, 0);
   assert.ok(/20/.test(buckets[2].label), buckets[2].label);
 });
+
+// ---------- what the trading cost ----------
+
+// the default trade grosses 10 $ at 80 ₽ = 800 ₽ before fees
+const withFees = (num, moex, other) => trade({
+  num,
+  legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 101, feeRub: moex },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: other },
+  ],
+});
+
+test('feeSummary — what was paid in total and per trade', () => {
+  const s = analytics.feeSummary([withFees(1, 30, 20), withFees(2, 40, 10)]);
+  near(s.total, 100);
+  near(s.perTrade, 50);
+});
+
+test('feeSummary — the share of the gross the fees ate', () => {
+  // 800 ₽ gross a trade, 100 ₽ of fees over two trades = 6,25%
+  const s = analytics.feeSummary([withFees(1, 30, 20), withFees(2, 40, 10)]);
+  near(s.share, 0.0625, 1e-6);
+});
+
+test('feeSummary — fees by exchange, dearest first', () => {
+  const s = analytics.feeSummary([withFees(1, 30, 20), withFees(2, 40, 10)]);
+  assert.deepStrictEqual(s.byExchange.map((r) => [r.label, r.fee]), [['MOEX', 70], ['BYBIT', 30]]);
+});
+
+test('feeSummary — an open trade has not paid its way yet', () => {
+  const open = trade({ num: 3, closeDate: '', legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: null, feeRub: 500 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: null, feeRub: 500 },
+  ] });
+  const s = analytics.feeSummary([withFees(1, 30, 20), open]);
+  near(s.total, 50);
+  near(s.perTrade, 50);
+});
+
+test('feeSummary — an empty diary reports nothing rather than dividing by zero', () => {
+  const s = analytics.feeSummary([]);
+  assert.strictEqual(s.total, 0);
+  assert.strictEqual(s.perTrade, null);
+  assert.strictEqual(s.share, null);
+  assert.deepStrictEqual(s.byExchange, []);
+});
+
+test('feeSummary — no gross to speak of leaves the share unanswered', () => {
+  const flat = trade({ num: 1, legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 100, feeRub: 25 },
+    { exchange: 'BYBIT', side: 'Шорт', entryPrice: 101, units: 10, exitPrice: 101, feeRub: 25 },
+  ] });
+  const s = analytics.feeSummary([flat]);
+  near(s.total, 50);
+  assert.strictEqual(s.share, null);
+});

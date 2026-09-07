@@ -1003,6 +1003,30 @@ function renderBody(container, trades) {
       draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, R.bins)));
       return hist.box;
     },
+    // small: what the trading cost, and which venue took it
+    fees: () => {
+      const box = card('Комиссии');
+      const s = an.feeSummary(closed);
+      const total = el('div', 'fee-total');
+      total.textContent = F.fmtRub(s.total);
+      box.append(total);
+
+      const lines = el('div', 'fee-lines');
+      const line = (k, v, cls) => {
+        const row = el('div', 'fl' + (cls ? ' ' + cls : ''));
+        const key = el('span', 'k'); key.textContent = k;
+        const val = el('span', 'v'); val.textContent = v;
+        row.append(key, val);
+        return row;
+      };
+      lines.append(
+        line('За сделку', s.perTrade === null ? dash : F.fmtRub(s.perTrade)),
+        line('Доля от валовой прибыли', s.share === null ? dash : pct(s.share)),
+      );
+      s.byExchange.forEach((r, i) => lines.append(line(r.label, F.fmtRub(r.fee), i ? '' : 'sep')));
+      box.append(lines);
+      return box;
+    },
     // full width: it already tiles its own months
     calendar: () => {
       const cal = card('Календарь — профит по дням закрытия', 'wide');

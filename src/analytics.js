@@ -201,6 +201,35 @@ function avgReturnPct(trades) {
   return pcts.length ? pcts.reduce((s, v) => s + v, 0) / pcts.length : null;
 }
 
+// ---------- what the trading cost ----------
+
+// Fees are entered in roubles per leg, so nothing needs converting. Counted
+// over closed trades like every other figure here: an open trade's bill is not
+// final yet. `share` is the part of the gross the fees ate — null when there is
+// no gross to take a part of.
+function feeSummary(trades) {
+  const closed = closedOnly(trades);
+  let total = 0, gross = 0;
+  const byExchange = new Map();
+  for (const t of closed) {
+    total += calc.feeTotalRub(t);
+    const rub = calc.pnlRub(t);
+    if (rub !== null) gross += rub + calc.feeTotalRub(t);
+    for (const leg of t.legs) {
+      const name = leg.exchange || '—';
+      byExchange.set(name, (byExchange.get(name) || 0) + (Number(leg.feeRub) || 0));
+    }
+  }
+  return {
+    total,
+    perTrade: closed.length ? total / closed.length : null,
+    share: gross > 0 ? total / gross : null,
+    byExchange: [...byExchange.entries()]
+      .map(([label, fee]) => ({ label, fee }))
+      .sort((a, b) => b.fee - a.fee),
+  };
+}
+
 // ---------- period filter ----------
 
 // 'all' | 'month' | 'quarter' | 'year'; open trades survive every window
@@ -219,7 +248,7 @@ const _api = {
   spreadBuckets,
   holdingDays, holdingBuckets,
   byMonth, byWeekday, calendarMap,
-  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct,
+  profitHistogram, capitalDeployed, capitalBuckets, avgReturnPct, feeSummary,
   filterByPeriod,
   MONTHS, WEEKDAYS,
 };

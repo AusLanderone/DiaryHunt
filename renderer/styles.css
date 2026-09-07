@@ -150,7 +150,10 @@ header {
 /* One grid definition drives both the header and every trade row, so the
    columns stay locked together without a <table>. */
 .journal {
-  --jcols: 46px 108px 84px 190px minmax(120px, 1fr) 176px 84px 148px 100px;
+  /* № · дата · тикер · тип+тег · ноги · спред · собран · объём · дней · дох. ·
+     чистый · действия — the fixed part has to clear 1280px minus the padding,
+     so the journal never scrolls sideways in the default window */
+  --jcols: 40px 96px 78px 140px minmax(110px, 1fr) 136px 76px 84px 44px 66px 120px 84px;
   display: flex; flex-direction: column; height: 100%;
 }
 
@@ -335,6 +338,18 @@ header {
 .trade-row .sp-fact.pos { color: var(--pos); background: color-mix(in srgb, var(--pos) 14%, var(--surface-2)); }
 .trade-row .sp-fact.neg { color: var(--neg); background: color-mix(in srgb, var(--neg) 14%, var(--surface-2)); }
 .trade-row .sp-fact.none { background: transparent; color: var(--muted-2); font-weight: 400; }
+
+/* size, days and return: supporting figures, so they read quieter than the
+   money beside them but stay column-aligned */
+.trade-row .size, .trade-row .hold, .trade-row .ret {
+  justify-content: flex-end;
+  font-family: var(--mono); font-variant-numeric: tabular-nums;
+  font-size: 12px; color: var(--muted);
+  white-space: nowrap;
+}
+.trade-row .hold.none { color: var(--muted-2); }
+.trade-row .ret .pos { color: var(--pos); }
+.trade-row .ret .neg { color: var(--neg); }
 
 .trade-row .money { justify-content: flex-end; }
 .trade-row .money .sum {

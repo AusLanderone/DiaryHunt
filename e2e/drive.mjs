@@ -135,6 +135,11 @@ try {
       sortable: document.querySelectorAll('.journal-head .sortable').length,
       // the spread each closed trade actually collected, one badge per row
       spreadFacts: [...document.querySelectorAll('.trade-row .sp-fact')].map((b) => b.textContent),
+      heads: [...document.querySelectorAll('.journal-head .jh')].map((h) => h.textContent),
+      // size / days / return, one cell per row
+      sizes: [...document.querySelectorAll('.trade-row .size')].map((c) => c.textContent),
+      holds: [...document.querySelectorAll('.trade-row .hold')].map((c) => c.textContent),
+      rets: [...document.querySelectorAll('.trade-row .ret')].map((c) => c.textContent),
       overflow: document.querySelector('.journal-scroll').scrollWidth
         - document.querySelector('.journal-scroll').clientWidth,
       footer: document.querySelector('.journal-total .lbl').innerText.replace(/\n/g, ' '),
@@ -156,8 +161,24 @@ try {
     && /MOEX/.test(journal.firstRow) && /%/.test(journal.firstRow) && /₽/.test(journal.firstRow),
     journal.firstRow);
   check('status filters and sortable headers are present',
-    journal.filters.length === 3 && journal.sortable === 6, JSON.stringify(journal.filters));
-  check('unsorted columns show they can be sorted', journal.sortHints === 6, String(journal.sortHints));
+    journal.filters.length === 3 && journal.sortable === 9, JSON.stringify(journal.filters));
+  check('unsorted columns show they can be sorted', journal.sortHints === 9, String(journal.sortHints));
+  check('the journal carries size, days and return columns',
+    /объём/i.test(journal.heads.join('|')) && /дней/i.test(journal.heads.join('|'))
+    && /дох/i.test(journal.heads.join('|')), journal.heads.join('|'));
+  // #1: (1,1505×42000 + 1,1526925×40000) × 83,7 over two legs = 3 951 841 ₽
+  // #3: (65,76×530 + 65,269×500) × 84,95 over two legs = 2 866 523 ₽
+  check('each row shows the money one leg of it ties up',
+    journal.sizes.length === 2 && journal.sizes.some((v) => /3,95\s*млн/.test(v))
+    && journal.sizes.some((v) => /2,87\s*млн/.test(v)), journal.sizes.join('|'));
+  // both fixtures opened and closed the same day
+  check('each row shows how long the trade ran',
+    journal.holds.length === 2 && journal.holds.every((v) => /^0\s*д$/.test(v.trim())),
+    journal.holds.join('|'));
+  // #1: 1 339,40 ₽ on 3 951 841 ₽ = 0,0339%; #3: 862,97 ₽ on 2 866 523 ₽ = 0,0301%
+  check('each row shows what it returned on that money',
+    journal.rets.length === 2 && journal.rets.some((v) => /\+0,034%/.test(v))
+    && journal.rets.some((v) => /\+0,030%/.test(v)), journal.rets.join('|'));
   // #1 collected 0.1904% - 0.1484% = 0.0419%; #3 moved 0.1150% and both closed
   // in profit, so both read as a plus whichever way their spread went
   check('closed rows show the spread actually collected, signed by the result',
@@ -315,6 +336,49 @@ try {
   check('an empty result explains itself instead of showing a blank page',
     filtered.afterOpen === 0 && /ничего не подошло/i.test(filtered.emptyNote), JSON.stringify(filtered));
   check('clearing the filter brings every trade back', filtered.restored === 2, JSON.stringify(filtered));
+
+  // the new columns sort like any other: #1 (ED) ties up more money than #3
+  const sizeSort = await page.evaluate(() => {
+    const head = [...document.querySelectorAll('.journal-head .sortable')]
+      .find((h) => /объём/i.test(h.textContent));
+    head.click();
+    const desc = [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
+    head.click();
+    const asc = [...document.querySelectorAll('.trade-row .ticker .tk')].map((t) => t.textContent);
+    head.click();   // back to the default order
+    return { desc, asc };
+  });
+  check('the size column sorts the journal, biggest first',
+    sizeSort.desc.join() === 'ED,SILV' && sizeSort.asc.join() === 'SILV,ED', JSON.stringify(sizeSort));
+
+  // an open trade ties up money but has no span and no return yet
+  await page.evaluate(() => window.api.trades.add({
+    openDate: '2026-08-20', closeDate: '', type: 'Фьючи', ticker: 'OPENONE',
+    tag: 'Схождение', usdRub: 85, payout: 0, adjustment: 0, comment: 'e2e open',
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 100, exitPrice: null, feeRub: 0 },
+      { exchange: 'BYBIT', side: 'Шорт', entryPrice: 101, units: 100, exitPrice: null, feeRub: 0 },
+    ],
+  }));
+  await page.reload();
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
+  const openRow = await page.evaluate(() => {
+    const row = [...document.querySelectorAll('.trade-row')]
+      .find((r) => /OPENONE/.test(r.innerText));
+    const cell = (cls) => row.querySelector('.' + cls).textContent.trim();
+    return { size: cell('size'), hold: cell('hold'), ret: cell('ret') };
+  });
+  // (100 × 100 + 101 × 100) × 85 over two legs = 854 250 ₽
+  check('an open trade still shows the money it ties up',
+    /854\s*250|0,85\s*млн/.test(openRow.size), openRow.size);
+  check('an open trade shows no days and no return yet',
+    openRow.hold === '—' && openRow.ret === '—', JSON.stringify(openRow));
+  await page.evaluate(() => window.api.trades.list().then((ts) => {
+    const t = ts.find((x) => x.ticker === 'OPENONE');
+    return t ? window.api.trades.remove(t.id) : null;
+  }));
+  await page.reload();
+  await page.waitForSelector('.trade-row', { timeout: 10000 });
 
   console.log('\n[3] stats');
   await page.evaluate(() => document.querySelector('#tab-stats').click());

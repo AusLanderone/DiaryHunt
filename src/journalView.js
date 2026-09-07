@@ -68,6 +68,19 @@ function heldDays(t) {
   return Math.round((asUTC(t.closeDate) - asUTC(t.openDate)) / DAY);
 }
 
+// The three figures a row carries beyond its money: how big the trade was, how
+// long it ran, what it returned. One definition, so the columns and the sort
+// can never drift apart. Size counts even while the trade is open — the money
+// is tied up either way; the other two wait for the close.
+function rowStats(trade) {
+  const closed = calc.isClosed(trade);
+  return {
+    size: calc.positionStartAvgRub(trade),
+    hold: heldDays(trade),
+    ret: closed ? calc.pnlNetPct(trade) : null,
+  };
+}
+
 const SORT_VALUE = {
   num: (t) => t.num,
   date: (t) => t.openDate || '',
@@ -77,9 +90,9 @@ const SORT_VALUE = {
   // have none yet
   spreadFact: (t) => (calc.isClosed(t) ? calc.spreadCollected(t) : null),
   profit: (t) => (calc.isClosed(t) ? calc.netProfitRub(t) : null),
-  size: (t) => calc.positionStartAvgRub(t),
-  hold: (t) => heldDays(t),
-  ret: (t) => (calc.isClosed(t) ? calc.pnlNetPct(t) : null),
+  size: (t) => rowStats(t).size,
+  hold: (t) => rowStats(t).hold,
+  ret: (t) => rowStats(t).ret,
 };
 
 // Open trades have no profit to compare, so they always sit at the bottom
@@ -151,7 +164,7 @@ function summarize(trades) {
   };
 }
 
-const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, heldDays, MONTHS };
+const _api = { filterTrades, sortTrades, groupByMonth, summarize, nextSort, heldDays, rowStats, MONTHS };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.journalView = _api;
 })();

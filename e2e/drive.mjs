@@ -701,6 +701,31 @@ try {
   await page.screenshot({ path: path.join(SHOT, '05b-stats-filters.png'), fullPage: true });
   check('the reset leaves the tab as it was', (await closedNow()) === '2', `got ${await closedNow()}`);
 
+  console.log('\n[3d2] the equity curve answers when pointed at');
+  // #1 closed 13.08 at 1 044,40 ₽ and #2 on 17.08 taking the running total to
+  // 4 968,36 ₽ — pointing at the last node has to say exactly that
+  const equityTip = await page.evaluate(() => {
+    const canvas = document.querySelector('[data-widget="equity"] canvas');
+    const r = canvas.getBoundingClientRect();
+    const at = (x) => canvas.dispatchEvent(new MouseEvent('mousemove', {
+      clientX: x, clientY: r.top + r.height / 2, bubbles: true }));
+    at(r.right - 20);
+    const tip = document.getElementById('dh-chart-tip');
+    const shown = { display: getComputedStyle(tip).display, text: tip.innerText };
+    canvas.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    return { shown, hiddenAfter: getComputedStyle(tip).display };
+  });
+  check('pointing at the curve names the day it is standing on',
+    /17\.08/.test(equityTip.shown.text), JSON.stringify(equityTip.shown));
+  check('and what the diary had made by then',
+    norm(equityTip.shown.text).includes('4968,36')
+    || norm(equityTip.shown.text).includes('4968,37'), JSON.stringify(equityTip.shown));
+  check('and what that very trade brought',
+    norm(equityTip.shown.text).includes('3923,97'), JSON.stringify(equityTip.shown));
+  check('the tooltip goes away when the pointer leaves',
+    equityTip.shown.display === 'block' && equityTip.hiddenAfter === 'none',
+    JSON.stringify(equityTip));
+
   console.log('\n[3e2] what the trading cost');
   // #1 paid 270 + 232 ₽, #3 paid 46 ₽: 548 ₽ over two trades, 274 ₽ each.
   // Gross before fees is 1 841,40 + 908,97 = 2 750,37 ₽, so the fees ate 19,93%.

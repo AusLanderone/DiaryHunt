@@ -80,7 +80,11 @@ window.api.sync.onState(renderSync);
 window.api.sync.status().then(renderSync);
 
 async function applySavedSettings() {
-  try { window.settings.applySettings(await window.api.config.getSettings()); } catch { /* defaults */ }
+  try {
+    // stashed whole: settings.js applies the look, stats.js reads the widget bands
+    window.appSettings = await window.api.config.getSettings();
+    window.settings.applySettings(window.appSettings);
+  } catch { /* defaults */ }
 }
 
 applySavedSettings();

@@ -175,3 +175,14 @@ test('capitalDeployed — a rouble-quoted leg counts at face value', () => {
   });
   near(analytics.capitalDeployed(t), 1005);   // (1 000 + 1 010) / 2 ₽, not × 80
 });
+
+test('holdingBuckets — the bands are the ones asked for', () => {
+  const sameDay = trade({ num: 1, openDate: '2026-08-12' });          // 0 days
+  const week = trade({ num: 2, openDate: '2026-08-01' });             // 11 days
+  const buckets = analytics.holdingBuckets([sameDay, week], [1, 20]);
+  assert.strictEqual(buckets.length, 3, buckets.map((b) => b.label).join('|'));
+  assert.strictEqual(buckets[0].count, 1, 'the same-day trade is under a day');
+  assert.strictEqual(buckets[1].count, 1, 'the 11-day trade is between 1 and 20');
+  assert.strictEqual(buckets[2].count, 0);
+  assert.ok(/20/.test(buckets[2].label), buckets[2].label);
+});

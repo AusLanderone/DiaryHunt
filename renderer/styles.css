@@ -1030,3 +1030,35 @@ canvas { display: block; width: 100%; }
 .filter-field:focus-within { border-color: var(--accent); }
 .filter-foot { display: flex; justify-content: flex-end; }
 .filter-note { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
+
+/* ---------- per-widget bands ---------- */
+.card { position: relative; }
+.card-gear {
+  position: absolute; top: 10px; right: 10px;
+  width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid transparent; border-radius: 6px;
+  background: transparent; color: var(--muted-2);
+  font-size: 12px; line-height: 1; cursor: pointer;
+  /* quiet, but never invisible: a control nobody can see is a control nobody
+     finds */
+  opacity: .45; transition: opacity .12s ease;
+}
+.card:hover .card-gear, .card-gear:focus-visible { opacity: 1; }
+.card-gear:hover { color: var(--text); border-color: var(--line); background: var(--surface-2); }
+
+.range-field { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.range-field .rf-label { font-size: 12px; color: var(--muted); }
+.range-input {
+  padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); color: var(--text);
+  font-family: var(--mono); font-size: 14px;
+}
+.range-input:focus { outline: none; border-color: var(--accent); }
+.range-input.bad { border-color: var(--neg); }
+.range-preview {
+  margin-top: 10px; padding: 8px 10px;
+  border: 1px dashed var(--line); border-radius: 8px;
+  color: var(--muted); font-size: 12px;
+}

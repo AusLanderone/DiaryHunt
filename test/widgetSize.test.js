@@ -72,3 +72,23 @@ test('a card cannot be dragged wider than the grid', () => {
 test('and not taller than a screen holds', () => {
   assert.strictEqual(ws.resize({ cols: 1, rows: 1 }, 0, 9000, metrics).rows, ws.MAX_ROWS);
 });
+
+// ---------- the balances tab is laid out the same way ----------
+
+test('every balances widget has a size of its own', () => {
+  for (const id of wo.BALANCES_ORDER) {
+    assert.ok(ws.BALANCES_DEFAULTS[id], `no size for ${id}`);
+  }
+});
+
+test('the balances sizes tile three columns just like the stats ones', () => {
+  const cols = Object.values(ws.BALANCES_DEFAULTS).reduce((s, v) => s + v.cols, 0);
+  assert.strictEqual(cols % 3, 0, JSON.stringify(ws.BALANCES_DEFAULTS));
+});
+
+test('normalize takes the defaults it is given', () => {
+  const out = ws.normalize({ curve: { cols: 1, rows: 2 } }, ws.BALANCES_DEFAULTS);
+  assert.deepStrictEqual(out.curve, { cols: 1, rows: 2 });
+  assert.deepStrictEqual(out.accounts, ws.BALANCES_DEFAULTS.accounts);
+  assert.ok(!('equity' in out), 'stats widgets have no business here');
+});

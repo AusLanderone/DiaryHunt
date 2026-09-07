@@ -1705,6 +1705,104 @@ try {
   check('snapshots can be removed', cleaned === 0, String(cleaned));
 
 
+  console.log('\n[9b] the balances widgets are laid out like the stats ones');
+  // section [9] cleared the tab; the widgets only exist once there is something
+  // to draw, so put a couple of marks and a movement back
+  await page.evaluate(async () => {
+    await window.api.balances.add({ date: '2026-08-13', usdRub: 83, comment: '',
+      accounts: [{ name: 'MOEX', amount: 1200000, ccy: 'RUB' }, { name: 'FOREX', amount: 12000, ccy: 'USD' }] });
+    await window.api.balances.add({ date: '2026-08-28', usdRub: 86, comment: '',
+      accounts: [{ name: 'MOEX', amount: 1300000, ccy: 'RUB' }, { name: 'FOREX', amount: 12500, ccy: 'USD' }] });
+    await window.api.flows.add({ date: '2026-08-20', account: 'FOREX', amount: 2500,
+      ccy: 'USD', kind: 'in', usdRub: 85, comment: 'e2e' });
+  });
+  await page.reload();
+  await page.waitForSelector('#tab-balances', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-balances').click());
+  await page.waitForTimeout(500);
+  const balGrid = await page.evaluate(() => {
+    const grid = document.querySelector('.stats-grid');
+    if (!grid) return null;
+    const gw = grid.getBoundingClientRect().width;
+    const cards = [...grid.children];
+    return {
+      ids: cards.map((c) => c.dataset.widget),
+      handles: grid.querySelectorAll('.card-drag').length,
+      grips: grid.querySelectorAll('.card-resize').length,
+      curveFull: (() => {
+        const c = cards.find((x) => x.dataset.widget === 'curve');
+        return c ? c.getBoundingClientRect().width > gw * 0.9 : false;
+      })(),
+      // a wide table has to scroll inside its card, not push the card open:
+      // the card itself must have nothing to scroll sideways
+      sideSpill: cards.filter((c) => c.scrollWidth - c.clientWidth > 2)
+        .map((c) => c.dataset.widget),
+      scrollable: cards.filter((c) => [...c.querySelectorAll('.table-scroll')]
+        .some((b) => b.scrollWidth > b.clientWidth)).map((c) => c.dataset.widget),
+      ragged: (() => {
+        const bands = new Map();
+        cards.forEach((c) => {
+          const r = c.getBoundingClientRect();
+          const k = Math.round(r.top);
+          if (!bands.has(k)) bands.set(k, []);
+          bands.get(k).push(Math.round(r.bottom));
+        });
+        return [...bands.values()].filter((b) => new Set(b).size > 1).length;
+      })(),
+    };
+  });
+  check('the balances tab draws its widgets as cards on the same grid',
+    balGrid && balGrid.ids.join('|') === 'curve|accounts|snapshots|flows',
+    balGrid && balGrid.ids.join('|'));
+  check('each of them has a handle and a corner, like on the stats tab',
+    balGrid.handles === 4 && balGrid.grips === 4, JSON.stringify(balGrid));
+  check('the capital curve runs the full width again', balGrid.curveFull === true);
+  check('a table stays inside its card instead of hanging over the next one',
+    balGrid.sideSpill.length === 0, balGrid.sideSpill.join('|'));
+  check('a table too wide for its card scrolls inside it',
+    balGrid.scrollable.length > 0, balGrid.scrollable.join('|'));
+  check('the balances cards line up in rows like the stats ones',
+    balGrid.ragged === 0, String(balGrid.ragged));
+
+  // dragged and resized the same way, and remembered the same way
+  await page.evaluate(() => {
+    const grid = document.querySelector('.stats-grid');
+    const src = [...grid.children].find((c) => c.dataset.widget === 'flows');
+    const tgt = [...grid.children].find((c) => c.dataset.widget === 'curve');
+    const dt = new DataTransfer();
+    src.querySelector('.card-drag').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    src.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
+    tgt.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    tgt.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  });
+  await page.waitForTimeout(400);
+  const balMoved = await page.evaluate(() =>
+    [...document.querySelectorAll('.stats-grid > .card')].map((c) => c.dataset.widget));
+  check('a balances card is dragged into place like a stats one',
+    balMoved[0] === 'flows', balMoved.join('|'));
+
+  await page.reload();
+  await page.waitForSelector('#tab-balances', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-balances').click());
+  await page.waitForTimeout(500);
+  const balKept = await page.evaluate(() =>
+    [...document.querySelectorAll('.stats-grid > .card')].map((c) => c.dataset.widget));
+  check('and the arrangement survives a restart', balKept.join('|') === balMoved.join('|'),
+    balKept.join('|'));
+  await page.screenshot({ path: path.join(SHOT, '09b-balances-grid.png') });
+
+  await page.evaluate(() => [...document.querySelectorAll('.period-bar .chip')]
+    .find((b) => /раскладк/i.test(b.textContent)).click());
+  await page.waitForTimeout(400);
+  const balBack = await page.evaluate(() =>
+    [...document.querySelectorAll('.stats-grid > .card')].map((c) => c.dataset.widget));
+  check('«Раскладка по умолчанию» works on this tab too',
+    balBack.join('|') === 'curve|accounts|snapshots|flows', balBack.join('|'));
+  await page.evaluate(async () => {
+    for (const b of await window.api.balances.list()) await window.api.balances.remove(b.id);
+    for (const f of await window.api.flows.list()) await window.api.flows.remove(f.id);
+  });
+
   console.log('\n[10] cloud sync by link');
   const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxE2E_NOT_REAL/exec';
 

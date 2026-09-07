@@ -11,6 +11,9 @@ const DEFAULT_ORDER = [
   'spread', 'hold', 'capital', 'weekday', 'ticker', 'tag', 'months',
 ];
 
+// The balances tab is laid out by the same rules, with widgets of its own.
+const BALANCES_ORDER = ['curve', 'accounts', 'snapshots', 'flows'];
+
 // What a saved order turns into: the arrangement that was made, minus widgets
 // that no longer exist, plus any the saved order never heard of. A new widget
 // lands at the end rather than in the middle of someone's layout — visible,
@@ -40,7 +43,7 @@ function move(order, dragged, target) {
   return list;
 }
 
-const _api = { DEFAULT_ORDER, normalize, move };
+const _api = { DEFAULT_ORDER, BALANCES_ORDER, normalize, move };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.widgetOrder = _api;
 })();

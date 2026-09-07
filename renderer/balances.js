@@ -50,7 +50,24 @@ const hideTip = () => { chartTip().style.display = 'none'; };
 const state = { unit: 'rub', editing: null };
 let ctx = null;   // { container, snapshots, trades, flows }
 
-const rerender = () => renderBalances(ctx.container, ctx.snapshots, ctx.trades, ctx.flows);
+// Redrawing empties the tab, and an empty tab has nowhere to scroll — without
+// this the page snaps to the top every time a card is moved or resized.
+function rerender() {
+  const scroller = document.querySelector('#view');
+  const top = scroller ? scroller.scrollTop : 0;
+  renderBalances(ctx.container, ctx.snapshots, ctx.trades, ctx.flows);
+  if (!scroller || !top) return;
+  scroller.scrollTop = top;
+  requestAnimationFrame(() => { scroller.scrollTop = top; });
+}
+
+const layout = () => ({
+  orderKey: 'balancesOrder',
+  sizeKey: 'balancesSize',
+  ids: window.widgetOrder.BALANCES_ORDER,
+  sizeDefaults: window.widgetSize.BALANCES_DEFAULTS,
+  redraw: () => rerender(),
+});
 
 async function reload() {
   ctx.snapshots = await window.api.balances.list();
@@ -610,8 +627,17 @@ function snapshotEditor(snap) {
   return box;
 }
 
+// A table can be wider than the card it is drawn in — once cards are sized by
+// hand, always. It scrolls inside its own box rather than hanging out over the
+// card next to it.
+function tableBox(table) {
+  const box = el('div', 'table-scroll');
+  box.append(table);
+  return box;
+}
+
 function snapshotsTable(rows) {
-  const panel = card('Все отметки', 'wide');
+  const panel = card('Все отметки');
   panel.append(el('div', 'card-hint', 'Нажмите на строку, чтобы поправить суммы по счетам прямо здесь.'));
   const table = el('table', 'mini-table');
   const thead = el('thead');
@@ -659,12 +685,12 @@ function snapshotsTable(rows) {
     }
   });
   table.append(thead, tbody);
-  panel.append(table);
+  panel.append(tableBox(table));
   return panel;
 }
 
 function flowsTable(flows) {
-  const panel = card('Ввод и вывод средств', 'wide');
+  const panel = card('Ввод и вывод средств');
   if (!flows.length) {
     panel.append(el('div', 'panel-empty', 'Движений пока нет. «+ Ввод / вывод» — если заводили или снимали деньги.'));
     return panel;
@@ -704,7 +730,7 @@ function flowsTable(flows) {
     tbody.append(tr);
   });
   table.append(thead, tbody);
-  panel.append(table);
+  panel.append(tableBox(table));
   return panel;
 }
 
@@ -729,6 +755,12 @@ function renderBalances(container, snapshots, trades, flows) {
       b.onclick = () => { state.unit = key; rerender(); };
       bar.append(b);
     });
+  }
+  if (window.gridCards.changed(layout())) {
+    const back = el('button', 'chip order-reset', 'Раскладка по умолчанию');
+    back.title = 'Вернуть виджетам исходный порядок и размеры';
+    back.onclick = async () => { await window.gridCards.reset(layout()); rerender(); };
+    bar.append(back);
   }
   container.append(bar);
 
@@ -759,26 +791,30 @@ function renderBalances(container, snapshots, trades, flows) {
   );
   container.append(metrics);
 
-  const grid = el('div', 'stats-grid');
-  container.append(grid);
-
-  const curve = card('Кривая капитала — по отметкам и по журналу', 'wide');
-  const canvas = document.createElement('canvas');
-  curve.append(canvas);
-  const legend = el('div', 'curve-legend');
-  const legendItem = (cls, text) => {
-    const item = el('span', 'lg');
-    item.append(el('span', 'swatch ' + cls), el('span', 'lg-text', text));
-    return item;
+  // one builder per widget, laid out by renderer/gridCards.js — the same code
+  // the statistics tab uses, so both tabs drag and resize alike
+  const builders = {
+    curve: () => {
+      const curve = card('Кривая капитала — по отметкам и по журналу');
+      const canvas = document.createElement('canvas');
+      curve.append(canvas);
+      const legend = el('div', 'curve-legend');
+      const legendItem = (cls, text) => {
+        const item = el('span', 'lg');
+        item.append(el('span', 'swatch ' + cls), el('span', 'lg-text', text));
+        return item;
+      };
+      legend.append(legendItem('actual', 'по отметкам'), legendItem('journal', 'по журналу'));
+      curve.append(legend);
+      requestAnimationFrame(() => drawCurve(canvas, rows, journal, state.unit, ctx.flows));
+      return curve;
+    },
+    accounts: () => accountsPanel(snapshots[snapshots.length - 1]),
+    snapshots: () => snapshotsTable(rows),
+    flows: () => flowsTable(ctx.flows),
   };
-  legend.append(legendItem('actual', 'по отметкам'), legendItem('journal', 'по журналу'));
-  curve.append(legend);
-  grid.append(curve);
-  requestAnimationFrame(() => drawCurve(canvas, rows, journal, state.unit, ctx.flows));
-
-  grid.append(accountsPanel(snapshots[snapshots.length - 1]));
-  grid.append(snapshotsTable(rows));
-  grid.append(flowsTable(ctx.flows));
+  container.append(window.gridCards.render({ ...layout(), builders,
+    width: container.clientWidth || 1000 }));
 }
 
 window.balancesView = { renderBalances };

@@ -377,7 +377,8 @@ function breakdownPanel(title, groups, opts = {}) {
 
 function monthlyTable(rows) {
   const F = window.format;
-  const panel = card('Итоги по месяцам', 'wide');
+  // the width comes from the card's own size now, not from a class
+  const panel = card('Итоги по месяцам');
   const table = el('table', 'mini-table');
   const thead = el('thead');
   const htr = el('tr');
@@ -646,147 +647,18 @@ function openRangeDialog(key) {
   if (first) { first.focus(); first.select(); }
 }
 
-// ---------- the order the cards stand in ----------
+// ---------- the order and size of the cards ----------
 
-// Dragged by the handle in a card's corner and kept with the settings, so a
-// layout survives a restart the way the bands do.
-const WO = () => window.widgetOrder;
-let cardOrder = null;
-let draggingId = null;
-
-const order = () => (cardOrder || (cardOrder = WO().normalize((window.appSettings || {}).widgetOrder)));
-const orderChanged = () => order().join() !== WO().DEFAULT_ORDER.join();
-
-async function saveOrder(next) {
-  cardOrder = next;
-  window.appSettings = { ...(window.appSettings || {}), widgetOrder: next };
-  try {
-    await window.api.config.setSettings({ widgetOrder: next });
-  } catch { /* the view is already right; the disk write is best effort */ }
-}
-
-const WS = () => window.widgetSize;
-let cardSizes = null;
-
-const sizes = () => (cardSizes || (cardSizes = WS().normalize((window.appSettings || {}).widgetSize)));
-const sizesChanged = () => JSON.stringify(sizes()) !== JSON.stringify(WS().defaults());
-
-async function saveSizes(next) {
-  cardSizes = next;
-  window.appSettings = { ...(window.appSettings || {}), widgetSize: next };
-  try {
-    await window.api.config.setSettings({ widgetSize: next });
-  } catch { /* the view is already right; the disk write is best effort */ }
-}
-
-// How many columns the grid has right now, and how big one cell is — the raster
-// every card is measured against, so nothing ever lands between two columns.
-function gridMetrics(grid) {
-  const cols = WS().columnsFor(grid.clientWidth || 1000);
-  const gap = 14;
-  const cellW = (grid.clientWidth - gap * (cols - 1)) / cols + gap;
-  return { cols, gap, cellW, cellH: ROW_UNIT + gap };
-}
-
-const ROW_UNIT = 120;
-
-// Puts a card on the raster: its own size, clamped to the columns there are.
-function applySpan(box, id, cols) {
-  const span = WS().spanFor(sizes()[id], cols);
-  box.style.gridColumn = `span ${span.cols}`;
-  box.style.gridRow = `span ${span.rows}`;
-}
-
-// Dragging the corner resizes by whole cells, with the card itself following
-// the pointer so the size being chosen is the size on screen.
-function resizable(box, id) {
-  const grip = el('div', 'card-resize');
-  grip.title = 'Потянуть за угол, чтобы изменить размер';
-  box.appendChild(grip);
-
-  grip.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const grid = box.parentElement;
-    const metrics = gridMetrics(grid);
-    const start = { ...sizes()[id] };
-    const from = { x: e.clientX, y: e.clientY };
-    let next = start;
-    box.classList.add('resizing');
-    // capture keeps the drag alive when the pointer leaves the grip; it can
-    // refuse (a synthetic pointer, a released one) and the drag still works
-    try { grip.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
-
-    const onMove = (ev) => {
-      next = WS().resize(start, ev.clientX - from.x, ev.clientY - from.y,
-        { cellW: metrics.cellW, cellH: metrics.cellH, maxCols: metrics.cols });
-      box.style.gridColumn = `span ${next.cols}`;
-      box.style.gridRow = `span ${next.rows}`;
-    };
-    const onUp = async () => {
-      grip.removeEventListener('pointermove', onMove);
-      grip.removeEventListener('pointerup', onUp);
-      box.classList.remove('resizing');
-      if (next.cols !== start.cols || next.rows !== start.rows) {
-        await saveSizes({ ...sizes(), [id]: next });
-      }
-      redrawBody();   // the charts redraw at whatever height they now have
-    };
-    grip.addEventListener('pointermove', onMove);
-    grip.addEventListener('pointerup', onUp);
-  });
-  return box;
-}
-
-const clearDropHints = () => document.querySelectorAll('.stats-grid .card')
-  .forEach((c) => c.classList.remove('drop-target', 'dragging'));
-
-// A card is only draggable while its handle is held: otherwise every stray
-// drag over a chart would pick the whole widget up.
-function dragify(box, id, cols) {
-  box.dataset.widget = id;
-  applySpan(box, id, cols);
-  resizable(box, id);
-  const tools = box.querySelector('.card-tools');
-  const handle = el('button', 'card-drag');
-  handle.textContent = '⠿';
-  handle.title = 'Перетащить виджет на другое место';
-  handle.onmousedown = () => { box.draggable = true; };
-  handle.onmouseup = () => { box.draggable = false; };
-  handle.onclick = (e) => e.stopPropagation();
-  if (tools) tools.prepend(handle);
-
-  box.addEventListener('dragstart', (e) => {
-    draggingId = id;
-    box.classList.add('dragging');
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-      try { e.dataTransfer.setData('text/plain', id); } catch { /* older engines */ }
-    }
-  });
-  box.addEventListener('dragend', () => {
-    draggingId = null;
-    box.draggable = false;
-    clearDropHints();
-  });
-  box.addEventListener('dragover', (e) => {
-    if (!draggingId || draggingId === id) return;
-    e.preventDefault();
-    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-    box.classList.add('drop-target');
-  });
-  box.addEventListener('dragleave', () => box.classList.remove('drop-target'));
-  box.addEventListener('drop', async (e) => {
-    e.preventDefault();
-    const from = draggingId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
-    draggingId = null;
-    clearDropHints();
-    if (!from || from === id) return;
-    await saveOrder(WO().move(order(), from, id));
-    redrawBody();
-  });
-  return box;
-}
+// The machinery lives in renderer/gridCards.js — the balances tab is laid out
+// by the same code, so the two tabs cannot drift apart.
+const GC = () => window.gridCards;
+const LAYOUT = () => ({
+  orderKey: 'widgetOrder',
+  sizeKey: 'widgetSize',
+  ids: window.widgetOrder.DEFAULT_ORDER,
+  sizeDefaults: window.widgetSize.DEFAULTS,
+  redraw: () => redrawBody(),
+});
 
 // ---------- extra filters ----------
 
@@ -934,14 +806,13 @@ function periodBar(onChange) {
   });
 
   // only worth offering once something has actually been rearranged
-  if (orderChanged() || sizesChanged()) {
+  if (GC().changed(LAYOUT())) {
     const back = el('button', 'chip order-reset');
     back.textContent = 'Раскладка по умолчанию';
     back.title = 'Вернуть виджетам исходный порядок и размеры';
     back.onclick = async (e) => {
       e.stopPropagation();
-      await saveOrder([...WO().DEFAULT_ORDER]);
-      await saveSizes(WS().defaults());
+      await GC().reset(LAYOUT());
       rerenderAll();
     };
     bar.appendChild(back);
@@ -1064,7 +935,7 @@ function renderBody(container, trades) {
   }
 
   const grid = el('div', 'stats-grid');
-  container.appendChild(grid);
+  container.appendChild(grid);   // replaced below by the laid-out one
   const draw = (fn) => requestAnimationFrame(fn);
 
   const dates = closed.map((t) => t.closeDate);
@@ -1136,13 +1007,7 @@ function renderBody(container, trades) {
     months: () => monthlyTable(an.byMonth(closed)),
   };
 
-  const cols = WS().columnsFor(container.clientWidth || 1000);
-  grid.style.setProperty('--cols', String(cols));
-  grid.style.setProperty('--unit', ROW_UNIT + 'px');
-  order().forEach((id) => {
-    if (!build[id]) return;
-    grid.appendChild(dragify(build[id](), id, cols));
-  });
+  grid.replaceWith(GC().render({ ...LAYOUT(), builders: build, width: container.clientWidth || 1000 }));
 }
 
 // Canvases are sized from their card's width, so a window resize has to redraw

@@ -32,9 +32,17 @@ const DEFAULTS = {
   months: { cols: 2, rows: 2 },
 };
 
+// The balances tab: the curve across the top, then the three panels in a row.
+const BALANCES_DEFAULTS = {
+  curve: { cols: 3, rows: 3 },
+  accounts: { cols: 1, rows: 2 },
+  snapshots: { cols: 1, rows: 2 },
+  flows: { cols: 1, rows: 2 },
+};
+
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
-const defaults = () => Object.fromEntries(
-  Object.entries(DEFAULTS).map(([k, v]) => [k, { ...v }]),
+const defaults = (defs = DEFAULTS) => Object.fromEntries(
+  Object.entries(defs).map(([k, v]) => [k, { ...v }]),
 );
 
 const usable = (size) => Boolean(size) && typeof size === 'object'
@@ -45,8 +53,8 @@ const usable = (size) => Boolean(size) && typeof size === 'object'
 // A saved size is taken as it is or not at all: half a size (no rows, say) is
 // a corrupt one, and guessing the other half would put a card somewhere nobody
 // asked for.
-function normalize(saved) {
-  const out = defaults();
+function normalize(saved, defs = DEFAULTS) {
+  const out = defaults(defs);
   if (!saved || typeof saved !== 'object') return out;
   for (const key of Object.keys(out)) {
     if (usable(saved[key])) out[key] = { cols: saved[key].cols, rows: saved[key].rows };
@@ -75,7 +83,8 @@ function resize(start, dx, dy, metrics) {
   };
 }
 
-const _api = { DEFAULTS, MAX_COLS, MAX_ROWS, MIN_COL_WIDTH, defaults, normalize, columnsFor, spanFor, resize };
+const _api = { DEFAULTS, BALANCES_DEFAULTS, MAX_COLS, MAX_ROWS, MIN_COL_WIDTH,
+  defaults, normalize, columnsFor, spanFor, resize };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.widgetSize = _api;
 })();

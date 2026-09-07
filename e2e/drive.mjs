@@ -857,6 +857,68 @@ try {
   await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
     .find((b) => /отмена/i.test(b.textContent)).click());
 
+  console.log('\n[3g] moving the widgets around');
+  const cardOrder = () => page.evaluate(() =>
+    [...document.querySelectorAll('.stats-grid .card')].map((c) => c.dataset.widget));
+  const dragCard = (from, to) => page.evaluate(([a, b]) => {
+    const cards = [...document.querySelectorAll('.stats-grid .card')];
+    const src = cards.find((c) => c.dataset.widget === a);
+    const tgt = cards.find((c) => c.dataset.widget === b);
+    const dt = new DataTransfer();
+    src.querySelector('.card-drag').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    src.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
+    tgt.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    tgt.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, [from, to]);
+
+  const startOrder = await cardOrder();
+  check('every card knows which widget it is, and they stand in a known order',
+    startOrder.length === 11 && startOrder[0] === 'equity' && !startOrder.includes(undefined),
+    startOrder.join('|'));
+  const handles = await page.evaluate(() => ({
+    count: document.querySelectorAll('.stats-grid .card-drag').length,
+    opacity: Number(getComputedStyle(document.querySelector('.card-drag')).opacity),
+    draggableBefore: document.querySelector('.stats-grid .card').draggable,
+  }));
+  check('every card has a handle, visible without hovering',
+    handles.count === 11 && handles.opacity >= 0.2, JSON.stringify(handles));
+  check('a card is not draggable until its handle is held',
+    handles.draggableBefore === false, String(handles.draggableBefore));
+
+  await dragCard('tag', 'equity');
+  await page.waitForTimeout(400);
+  const moved = await cardOrder();
+  check('a card dropped on another takes its place',
+    moved[0] === 'tag' && moved[1] === 'equity' && moved.length === 11, moved.join('|'));
+
+  await page.reload();
+  await page.waitForSelector('#tab-stats', { timeout: 10000 });
+  await page.evaluate(() => document.querySelector('#tab-stats').click());
+  await page.waitForTimeout(400);
+  const kept = await cardOrder();
+  check('the arrangement survives a restart', kept.join('|') === moved.join('|'), kept.join('|'));
+  await page.screenshot({ path: path.join(SHOT, '05g-widget-order.png'), fullPage: true });
+
+  // dragging back down puts it after the card it lands on
+  await dragCard('tag', 'days');
+  await page.waitForTimeout(400);
+  const backDown = await cardOrder();
+  check('dragging a card down moves it past the one it is dropped on',
+    backDown.indexOf('tag') === backDown.indexOf('days') + 1, backDown.join('|'));
+
+  const resetOrder = await page.evaluate(async () => {
+    const btn = [...document.querySelectorAll('.period-bar .chip')]
+      .find((b) => /порядок/i.test(b.textContent));
+    if (!btn) return null;
+    btn.click();
+    return true;
+  });
+  check('a changed arrangement offers a way back to the default', resetOrder === true);
+  await page.waitForTimeout(400);
+  const defaultAgain = await cardOrder();
+  check('and that puts the cards back the way the app ships them',
+    defaultAgain.join('|') === startOrder.join('|'), defaultAgain.join('|'));
+
   console.log('\n[4] form live recompute');
   await page.evaluate(() => document.querySelector('#tab-journal').click());
   await page.evaluate(() => document.querySelector('#btn-add').click());

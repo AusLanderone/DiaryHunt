@@ -107,8 +107,9 @@ function card(title, cls, cfg) {
   const box = el('section', 'card' + (cls ? ' ' + cls : ''));
   const h = el('h3', 'card-title');
   h.textContent = title;
-  box.appendChild(h);
-  if (cfg) box.appendChild(gearButton(cfg));
+  const tools = el('div', 'card-tools');
+  box.append(h, tools);
+  if (cfg) tools.appendChild(gearButton(cfg));
   return box;
 }
 
@@ -643,6 +644,73 @@ function openRangeDialog(key) {
   if (first) { first.focus(); first.select(); }
 }
 
+// ---------- the order the cards stand in ----------
+
+// Dragged by the handle in a card's corner and kept with the settings, so a
+// layout survives a restart the way the bands do.
+const WO = () => window.widgetOrder;
+let cardOrder = null;
+let draggingId = null;
+
+const order = () => (cardOrder || (cardOrder = WO().normalize((window.appSettings || {}).widgetOrder)));
+const orderChanged = () => order().join() !== WO().DEFAULT_ORDER.join();
+
+async function saveOrder(next) {
+  cardOrder = next;
+  window.appSettings = { ...(window.appSettings || {}), widgetOrder: next };
+  try {
+    await window.api.config.setSettings({ widgetOrder: next });
+  } catch { /* the view is already right; the disk write is best effort */ }
+}
+
+const clearDropHints = () => document.querySelectorAll('.stats-grid .card')
+  .forEach((c) => c.classList.remove('drop-target', 'dragging'));
+
+// A card is only draggable while its handle is held: otherwise every stray
+// drag over a chart would pick the whole widget up.
+function dragify(box, id) {
+  box.dataset.widget = id;
+  const tools = box.querySelector('.card-tools');
+  const handle = el('button', 'card-drag');
+  handle.textContent = '⠿';
+  handle.title = 'Перетащить виджет на другое место';
+  handle.onmousedown = () => { box.draggable = true; };
+  handle.onmouseup = () => { box.draggable = false; };
+  handle.onclick = (e) => e.stopPropagation();
+  if (tools) tools.prepend(handle);
+
+  box.addEventListener('dragstart', (e) => {
+    draggingId = id;
+    box.classList.add('dragging');
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', id); } catch { /* older engines */ }
+    }
+  });
+  box.addEventListener('dragend', () => {
+    draggingId = null;
+    box.draggable = false;
+    clearDropHints();
+  });
+  box.addEventListener('dragover', (e) => {
+    if (!draggingId || draggingId === id) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    box.classList.add('drop-target');
+  });
+  box.addEventListener('dragleave', () => box.classList.remove('drop-target'));
+  box.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    const from = draggingId || (e.dataTransfer && e.dataTransfer.getData('text/plain'));
+    draggingId = null;
+    clearDropHints();
+    if (!from || from === id) return;
+    await saveOrder(WO().move(order(), from, id));
+    redrawBody();
+  });
+  return box;
+}
+
 // ---------- extra filters ----------
 
 // The windows live in src/statsFilter.js; this is only their control panel.
@@ -788,6 +856,19 @@ function periodBar(onChange) {
     bar.appendChild(b);
   });
 
+  // only worth offering once something has actually been rearranged
+  if (orderChanged()) {
+    const back = el('button', 'chip order-reset');
+    back.textContent = 'Порядок по умолчанию';
+    back.title = 'Вернуть виджеты в том порядке, в котором их ставит приложение';
+    back.onclick = async (e) => {
+      e.stopPropagation();
+      await saveOrder([...WO().DEFAULT_ORDER]);
+      rerenderAll();
+    };
+    bar.appendChild(back);
+  }
+
   const toggle = el('button', 'chip stats-filters-toggle' + (filtersActive() ? ' active' : ''));
   toggle.textContent = toggleLabel();
   toggle.title = 'Дополнительные окна: даты, тикер, тег, биржа, день недели, объём и спреды';
@@ -895,44 +976,55 @@ function renderBody(container, trades) {
   container.appendChild(grid);
   const draw = (fn) => requestAnimationFrame(fn);
 
-  // equity curve — full width, it reads by shape rather than by value
   const dates = closed.map((t) => t.closeDate);
-  const eq = chartCard('Кривая капитала — накопительный профит, ₽', 'wide');
-  grid.appendChild(eq.box);
-  draw(() => drawEquity(eq.canvas, cumulative, dates));
-
-  // profit by day + distribution share a row
   const byDay = an.groupBy(closed, (t) => t.closeDate).sort((a, b) => (a.key < b.key ? -1 : 1));
   byDay.forEach((g) => (g.label = ddmm(g.key)));
-  const day = chartCard('Профит по дням, ₽');
-  grid.appendChild(day.box);
-  draw(() => drawBars(day.canvas, byDay));
-
-  const hist = chartCard('Распределение результатов — сделок в диапазоне', null, 'bins');
-  grid.appendChild(hist.box);
-  draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, ranges().bins)));
-
-  // calendar — full width, it already tiles its own months
-  const cal = card('Календарь — профит по дням закрытия', 'wide');
-  cal.appendChild(calendarWidget(an.calendarMap(closed)));
-  grid.appendChild(cal);
-
-  // breakdowns
   const R = ranges();
   const byProfit = (a, b) => b.profit - a.profit;
   const byTicker = an.groupBy(closed, (t) => t.ticker).sort(byProfit);
   const byTag = an.groupBy(closed, (t) => t.tag || '—').sort(byProfit);
 
-  grid.append(
-    breakdownPanel('Профит по спреду входа', an.spreadBuckets(closed, R.spread), { cfg: 'spread' }),
-    breakdownPanel('Профит по времени удержания', an.holdingBuckets(closed, R.hold), { cfg: 'hold' }),
-    breakdownPanel('Профит по объёму позиции — средняя нога',
+  // One builder per widget, keyed by the id src/widgetOrder.js knows it as —
+  // the cards then go up in whatever order the reader dragged them into.
+  const build = {
+    // full width: it reads by shape rather than by value
+    equity: () => {
+      const eq = chartCard('Кривая капитала — накопительный профит, ₽', 'wide');
+      draw(() => drawEquity(eq.canvas, cumulative, dates));
+      return eq.box;
+    },
+    days: () => {
+      const day = chartCard('Профит по дням, ₽');
+      draw(() => drawBars(day.canvas, byDay));
+      return day.box;
+    },
+    hist: () => {
+      const hist = chartCard('Распределение результатов — сделок в диапазоне', null, 'bins');
+      draw(() => drawHistogram(hist.canvas, an.profitHistogram(profits, R.bins)));
+      return hist.box;
+    },
+    // full width: it already tiles its own months
+    calendar: () => {
+      const cal = card('Календарь — профит по дням закрытия', 'wide');
+      cal.appendChild(calendarWidget(an.calendarMap(closed)));
+      return cal;
+    },
+    spread: () => breakdownPanel('Профит по спреду входа',
+      an.spreadBuckets(closed, R.spread), { cfg: 'spread' }),
+    hold: () => breakdownPanel('Профит по времени удержания',
+      an.holdingBuckets(closed, R.hold), { cfg: 'hold' }),
+    capital: () => breakdownPanel('Профит по объёму позиции — средняя нога',
       an.capitalBuckets(closed, R.capital), { cfg: 'capital' }),
-    breakdownPanel('Профит по дню недели', an.byWeekday(closed)),
-    breakdownPanel('Профит по тикеру', byTicker),
-    breakdownPanel('Профит по тегу', byTag),
-    monthlyTable(an.byMonth(closed)),
-  );
+    weekday: () => breakdownPanel('Профит по дню недели', an.byWeekday(closed)),
+    ticker: () => breakdownPanel('Профит по тикеру', byTicker),
+    tag: () => breakdownPanel('Профит по тегу', byTag),
+    months: () => monthlyTable(an.byMonth(closed)),
+  };
+
+  order().forEach((id) => {
+    if (!build[id]) return;
+    grid.appendChild(dragify(build[id](), id));
+  });
 }
 
 // Canvases are sized from their card's width, so a window resize has to redraw

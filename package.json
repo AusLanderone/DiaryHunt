@@ -1,6 +1,6 @@
 {
   "name": "diaryhunt",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Manual-entry arbitrage trade diary",
   "author": "Denis",
   "main": "main.js",

@@ -59,6 +59,7 @@ try {
     executablePath: electronBin,
     args: [`--user-data-dir=${USERDATA}`, '.'],
     cwd: APP_DIR,
+    env: { ...process.env, DIARYHUNT_E2E: '1' },   // the suite never calls the exchange
     timeout: 30000,
   });
   const page = await app.firstWindow();
@@ -2079,7 +2080,7 @@ try {
   await page.waitForSelector('.modal', { timeout: 8000 });
   const clrUi = await page.evaluate(() => {
     const heads = [...document.querySelectorAll('.section-head')].map((h) => h.textContent);
-    const toggle = [...document.querySelectorAll('.modal label')].find((l) => /по клирингам/i.test(l.textContent));
+    const toggle = [...document.querySelectorAll('.modal label')].find((l) => /вариационку.*самостоятельно/i.test(l.textContent));
     const btns = [...document.querySelectorAll('.modal .btn')].map((b) => b.textContent);
     return { heads, hasToggle: !!toggle, btns };
   });
@@ -2090,7 +2091,7 @@ try {
     JSON.stringify(clrUi.btns));
   const savedToggle = await page.evaluate(async () => {
     const cb = [...document.querySelectorAll('.modal label')]
-      .find((l) => /по клирингам/i.test(l.textContent)).querySelector('input');
+      .find((l) => /вариационку.*самостоятельно/i.test(l.textContent)).querySelector('input');
     cb.checked = true;
     cb.dispatchEvent(new Event('change', { bubbles: true }));
     await new Promise((r) => setTimeout(r, 150));

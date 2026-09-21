@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('api', {
     usdRub: () => ipcRenderer.invoke('rates:usdRub'),
     pointValue: (code) => ipcRenderer.invoke('rates:pointValue', code),
   },
+  env: { e2e: !!process.env.DIARYHUNT_E2E },
   market: {
     legMargin: (payload) => ipcRenderer.invoke('market:legMargin', payload),
     clearCache: () => ipcRenderer.invoke('market:clearCache'),

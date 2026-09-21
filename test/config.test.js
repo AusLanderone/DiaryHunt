@@ -38,7 +38,7 @@ test('removeItem drops a value and persists across instances', () => {
 test('getSettings returns defaults, setSettings merges and persists', () => {
   const dir = tmpDir();
   const cfg = createConfig({ dataDir: dir });
-  assert.deepStrictEqual(cfg.getSettings(), { font: 'system', theme: 'default', scale: 1 });
+  assert.deepStrictEqual(cfg.getSettings(), { font: 'system', theme: 'default', scale: 1, clearingAuto: true });
   cfg.setSettings({ theme: 'ocean', scale: 1.1 });
   const reloaded = createConfig({ dataDir: dir });
   const s = reloaded.getSettings();
@@ -158,4 +158,11 @@ test('importAll carries the point values', () => {
   const dir = tmpDir();
   createConfig({ dataDir: dir }).importAll({ pointValues: { GOLD: 110.89 } });
   assert.strictEqual(createConfig({ dataDir: dir }).getPointValue('GOLD'), 110.89);
+});
+
+test('the diary computes the variation margin unless told otherwise', () => {
+  const cfg = createConfig({ dataDir: tmpDir() });
+  assert.strictEqual(cfg.getSettings().clearingAuto, true);
+  cfg.setSettings({ clearingAuto: false });
+  assert.strictEqual(cfg.getSettings().clearingAuto, false, 'and remembers being told otherwise');
 });

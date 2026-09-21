@@ -153,10 +153,10 @@
 
     // --- Расчёт по клирингам: вариационка ноги MOEX прямо из истории биржи ---
     const clrAuto = el('input', { type: 'checkbox' });
-    clrAuto.checked = !!s.clearingAuto;
+    clrAuto.checked = s.clearingAuto !== false;
     clrAuto.addEventListener('change', () => window.api.config.setSettings({ clearingAuto: clrAuto.checked }));
     const clrToggle = el('label', { class: 'auto-toggle' }, [clrAuto,
-      txt('считать ноги MOEX по клирингам при сохранении сделки')]);
+      txt('считать вариационку ноги MOEX самостоятельно — при запуске и при сохранении сделки')]);
     const clrBtn = el('button', { class: 'btn ghost' }, [txt('Пересчитать все закрытые сделки')]);
     const clrCacheBtn = el('button', { class: 'btn ghost' }, [txt('Очистить кэш истории')]);
     const clrInfo = el('div', { class: 'hint' });
@@ -171,34 +171,16 @@
     // so a second run costs almost nothing.
     clrBtn.onclick = async () => {
       clrBtn.disabled = true;
-      const trades = await window.api.trades.list();
-      const failed = [];
-      let touched = 0;
       try {
-        for (const t of trades) {
-          if (!t.closeDate) continue;
-          const legs = t.legs.map((l) => ({ ...l }));
-          let changed = false;
-          for (const l of legs) {
-            if (!window.calc.isRubLeg(l) || !window.calc.legIsClosed(l, t)) continue;
-            if (window.calc.legPnlFactRub(l) !== null) continue;
-            if (window.calc.legVmRub(l, t) !== null) continue;
-            clrInfo.textContent = `считаю сделку №${t.num}…`;
-            const r = await window.api.market.legMargin({
-              trade: { ticker: t.ticker, openDate: t.openDate, closeDate: t.closeDate },
-              leg: l, secid: l.secid || undefined,
-            });
-            if (!r.ok) { failed.push(`№${t.num}: ${r.error}`); continue; }
-            l.vmRub = r.rub;
-            l.secid = r.secid;
-            l.vmMeta = { secid: r.secid, sessions: r.sessions, fingerprint: r.fingerprint, computedAt: r.computedAt };
-            changed = true;
-          }
-          if (changed) { await window.api.trades.update(t.id, { legs }); touched++; }
-        }
-        clrInfo.textContent = `Пересчитано сделок: ${touched}`
-          + (failed.length ? ` · не вышло: ${failed.length} (наведите, чтобы прочитать)` : '');
-        clrInfo.title = failed.join('\n');
+        const trades = await window.api.trades.list();
+        const res = await window.clearing.runClearing(trades, ({ total, done, trade }) => {
+          clrInfo.textContent = trade ? `считаю сделку №${trade.num}… ${done} / ${total}` : 'почти всё…';
+        });
+        clrInfo.textContent = res.total === 0
+          ? 'Всё уже посчитано — пересчитывать нечего.'
+          : `Посчитано ног: ${res.done} из ${res.total}`
+            + (res.failed.length ? ` · не вышло: ${res.failed.length} (наведите, чтобы прочитать)` : '');
+        clrInfo.title = res.failed.join('\n');
         if (window.diary) window.diary.refresh();
       } finally {
         clrBtn.disabled = false;
@@ -289,7 +271,7 @@
         el('p', { class: 'hint' }, [txt('Полный бэкап в JSON: сделки, отметки баланса, движения средств, справочники и настройки — и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
         el('div', { class: 'data-row' }, [expBtn, impBtn, csvBtn]),
         el('div', { class: 'section-head' }, [txt('Расчёт по клирингам')]),
-        el('p', { class: 'hint' }, [txt('Нога MOEX котируется в долларах, но платят по ней рублями: биржа переоценивает позицию каждый вечер по расчётной цене и курсу ЦБ того дня. Приложение считает эту сумму само — по истории MOEX, без единой цифры из отчёта. Прошедшие сессии кэшируются, так что сеть нужна один раз на сделку.')]),
+        el('p', { class: 'hint' }, [txt('Нога MOEX котируется в долларах, но платят по ней рублями: биржа переоценивает позицию каждый вечер по расчётной цене и курсу ЦБ того дня. Приложение считает эту сумму само — по истории MOEX, без единой цифры из отчёта: при запуске оно догоняет всё, что ещё не посчитано, и делает это же при сохранении закрытой сделки. Прошедшие сессии кэшируются, так что сеть нужна один раз на сделку. Кнопка ниже — если хочется пересчитать прямо сейчас.')]),
         clrToggle,
         el('div', { class: 'data-row' }, [clrBtn, clrCacheBtn]),
         clrInfo,

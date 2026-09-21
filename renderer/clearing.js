@@ -11,8 +11,15 @@
 (function () {
   const Q = () => window.clearingQueue;
 
+  // A leg the exchange could not answer for — a trade closed today, a ticker it
+  // does not know — stays in the queue. Remembering the failures for the rest of
+  // the session keeps the diary from asking again on every redraw; a restart
+  // tries them all afresh, which is when a new day's history has appeared.
+  const refused = new Set();
+  const key = (item) => `${item.id}:${item.index}`;
+
   async function runClearing(trades, onProgress) {
-    const todo = Q().pending(trades);
+    const todo = Q().pending(trades).filter((item) => !refused.has(key(item)));
     const failed = [];
     let done = 0;
     if (!todo.length) return { total: 0, done: 0, failed };
@@ -38,7 +45,7 @@
           leg, secid: leg.secid || undefined,
         });
         done++;
-        if (!r.ok) { failed.push(`№${trade.num}: ${r.error}`); continue; }
+        if (!r.ok) { failed.push(`№${trade.num}: ${r.error}`); refused.add(key(item)); continue; }
         leg.secid = r.secid;
         leg.vmRub = r.rub;
         leg.vmMeta = { secid: r.secid, sessions: r.sessions,
@@ -51,5 +58,8 @@
     return { total: todo.length, done: done - failed.length, failed };
   }
 
-  window.clearing = { runClearing };
+  // pending work the diary has not been refused on yet
+  const outstanding = (trades) => Q().pending(trades).filter((item) => !refused.has(key(item))).length;
+
+  window.clearing = { runClearing, outstanding };
 })();

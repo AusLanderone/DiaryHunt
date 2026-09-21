@@ -4,6 +4,10 @@ let trades = [];
 async function refresh() {
   trades = await window.api.trades.list();
   showJournal();
+  // A restore from a backup or a pull from the cloud replaces the trades
+  // wholesale, computed figures and all. Whatever came back short is worked out
+  // again here, so the diary is not left waiting for the next restart.
+  catchUpClearing();
 }
 window.diary = { refresh };
 
@@ -101,17 +105,27 @@ function showClearing(text, cls) {
   clearingBadge.textContent = text || '';
 }
 
+let catchingUp = false;
+
 async function catchUpClearing() {
+  if (catchingUp) return;                                // one pass at a time
   if (window.api.env && window.api.env.e2e) return;      // tests do not call the exchange
   const settings = window.appSettings || await window.api.config.getSettings();
   if (settings.clearingAuto === false) return;
-  const todo = window.clearingQueue.pending(trades);
-  if (!todo.length) return;
-  showClearing(`считаю вариационку · 0 / ${todo.length}`, 'busy');
-  const res = await window.clearing.runClearing(trades, ({ total, done }) => {
-    showClearing(`считаю вариационку · ${done} / ${total}`, 'busy');
-  });
-  await refresh();
+  const todo = window.clearing.outstanding(trades);
+  if (!todo) return;
+  catchingUp = true;
+  showClearing(`считаю вариационку · 0 / ${todo}`, 'busy');
+  let res;
+  try {
+    res = await window.clearing.runClearing(trades, ({ total, done }) => {
+      showClearing(`считаю вариационку · ${done} / ${total}`, 'busy');
+    });
+    trades = await window.api.trades.list();
+    showJournal();
+  } finally {
+    catchingUp = false;
+  }
   if (res.failed.length) {
     showClearing(`вариационка: ${res.done} из ${res.total}`, 'warn');
     clearingBadge.title = 'Не вышло посчитать:\n' + res.failed.join('\n')
@@ -125,4 +139,4 @@ async function catchUpClearing() {
 }
 
 applySavedSettings();
-refresh().then(catchUpClearing).catch(() => {});
+refresh();

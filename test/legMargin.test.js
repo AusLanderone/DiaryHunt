@@ -55,6 +55,7 @@ test('the answer carries the fingerprint of what it was computed from', async ()
   assert.deepStrictEqual(r.fingerprint, {
     entryPrice: 4538, exitPrice: 4326.4, units: 21, side: 'Шорт',
     openDate: '2026-08-28', closeDate: '2026-09-01',
+    fills: '2026-08-28:4538:21:in|2026-09-01:4326.4:21:out',
   });
 });
 
@@ -91,4 +92,25 @@ test('a gap in the rate series is reported, not papered over', async () => {
     return SETTLES;
   };
   await assert.rejects(() => computeLegMargin(args({ get })), /курс/i);
+});
+
+test('a leg of several fills is read over the span of those fills', async () => {
+  const log = [];
+  const filled = { side: 'Шорт', fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-08-31', price: 4505, units: 1, kind: 'out' },
+    { date: '2026-09-01', price: 4400, units: 20, kind: 'out' },
+  ] };
+  const r = await computeLegMargin(args({ get: fakeGet(log), leg: filled }));
+  assert.strictEqual(r.sessions, 3);
+  assert.ok(log.some((u) => /from=2026-08-28&till=2026-09-01/.test(u)), log.join('\n'));
+  assert.ok(log.some((u) => /date=2026-08-28/.test(u)), 'the contract is resolved on the first fill');
+});
+
+test('an unclosed leg of fills is refused like any other', async () => {
+  const half = { side: 'Шорт', fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-08-31', price: 4505, units: 1, kind: 'out' },
+  ] };
+  await assert.rejects(() => computeLegMargin(args({ leg: half })), /закрыт/i);
 });

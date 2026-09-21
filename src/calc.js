@@ -1,20 +1,81 @@
 'use strict';
 
-const hasExit = (leg) => leg.exitPrice !== null && leg.exitPrice !== undefined && leg.exitPrice !== '';
+// ---------- a leg is a list of executions ----------
+//
+// A position is rarely one click, and the size can change while it is held: a
+// leg carries `fills` — {date, price, units, kind: 'in' | 'out'}. A leg saved
+// before this has one entry and one exit, which is the same list of two, so
+// every trade in the diary keeps its numbers to the kopeck.
+const EPS = 1e-9;
+const isFilled = (v) => v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
 
-function legPositionStart(leg) {
-  return Number(leg.entryPrice) * Number(leg.units);
+function legFills(leg, trade) {
+  const t = trade || {};
+  if (Array.isArray(leg.fills) && leg.fills.length) {
+    return leg.fills
+      .filter((f) => f && isFilled(f.price) && Number(f.units) > 0)
+      .map((f) => ({
+        date: f.date || null,
+        price: Number(f.price),
+        units: Number(f.units),
+        kind: f.kind === 'out' ? 'out' : 'in',
+      }))
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  }
+  const units = Number(leg.units);
+  if (!units) return [];
+  const out = [];
+  if (isFilled(leg.entryPrice)) out.push({ date: t.openDate || null, price: Number(leg.entryPrice), units, kind: 'in' });
+  if (isFilled(leg.exitPrice)) out.push({ date: t.closeDate || null, price: Number(leg.exitPrice), units, kind: 'out' });
+  return out;
 }
 
-function legPositionEnd(leg) {
-  if (!hasExit(leg)) return null;
-  return Number(leg.exitPrice) * Number(leg.units);
+const sumUnits = (fills, kind) => fills.reduce((s, f) => (f.kind === kind ? s + f.units : s), 0);
+const sumMoney = (fills, kind) => fills.reduce((s, f) => (f.kind === kind ? s + f.price * f.units : s), 0);
+
+// The size of the position that was opened — what «Кол-во единиц» used to be.
+function legUnits(leg, trade) {
+  return sumUnits(legFills(leg, trade), 'in');
 }
 
-function legGross(leg) {
-  const end = legPositionEnd(leg);
-  if (end === null) return null;
-  const start = legPositionStart(leg);
+function legAvgEntry(leg, trade) {
+  const fills = legFills(leg, trade);
+  const q = sumUnits(fills, 'in');
+  return q ? sumMoney(fills, 'in') / q : null;
+}
+
+function legAvgExit(leg, trade) {
+  const fills = legFills(leg, trade);
+  const q = sumUnits(fills, 'out');
+  return q ? sumMoney(fills, 'out') / q : null;
+}
+
+// Closed means everything that was opened has been closed again — a leg half
+// unwound is still open, and has no result yet.
+function legIsClosed(leg, trade) {
+  const fills = legFills(leg, trade);
+  const opened = sumUnits(fills, 'in');
+  return opened > 0 && Math.abs(opened - sumUnits(fills, 'out')) < EPS;
+}
+
+const hasExit = (leg) => legIsClosed(leg);
+
+function legPositionStart(leg, trade) {
+  return sumMoney(legFills(leg, trade), 'in');
+}
+
+function legPositionEnd(leg, trade) {
+  if (!legIsClosed(leg, trade)) return null;
+  return sumMoney(legFills(leg, trade), 'out');
+}
+
+// What the leg made, in the currency its price is quoted in: what came back
+// minus what went in, signed by the side.
+function legGross(leg, trade) {
+  if (!legIsClosed(leg, trade)) return null;
+  const fills = legFills(leg, trade);
+  const start = sumMoney(fills, 'in');
+  const end = sumMoney(fills, 'out');
   return leg.side === 'Шорт' ? start - end : end - start; // Лонг/Спот: end - start
 }
 
@@ -37,10 +98,8 @@ function spreadOver(trade, field) {
   let num = 1, den = 1, seenDen = false;
   for (let i = 0; i < trade.legs.length; i++) {
     const leg = trade.legs[i];
-    const raw = leg[field];
-    if (raw === null || raw === undefined || raw === '') return null;
-    const price = Number(raw);
-    if (Number.isNaN(price)) return null;
+    const price = field === 'entryPrice' ? legAvgEntry(leg, trade) : legAvgExit(leg, trade);
+    if (price === null || Number.isNaN(price)) return null;
     if (legRole(leg, i) === 'div') { den *= price; seenDen = true; } else { num *= price; }
   }
   const mid = (num + den) / 2;
@@ -84,7 +143,7 @@ function spreadCollected(trade) {
 function grossTotal(trade) {
   let sum = 0;
   for (const leg of trade.legs) {
-    const g = legGross(leg);
+    const g = legGross(leg, trade);
     if (g === null) return null;
     sum += g;
   }
@@ -139,12 +198,13 @@ function legPnlFactRub(leg) {
 // classic script and cannot require that module, so it carries its own copy —
 // test/variationMargin.test.js holds the two together.
 function vmFingerprint(leg, trade) {
-  const n = (v) => (filled(v) ? Number(v) : null);
   const t = trade || {};
+  const fills = legFills(leg, t);
   return {
-    entryPrice: n(leg.entryPrice), exitPrice: n(leg.exitPrice),
-    units: n(leg.units), side: leg.side || null,
+    entryPrice: legAvgEntry(leg, t), exitPrice: legAvgExit(leg, t),
+    units: legUnits(leg, t), side: leg.side || null,
     openDate: t.openDate || null, closeDate: t.closeDate || null,
+    fills: fills.map((f) => `${f.date}:${f.price}:${f.units}:${f.kind}`).join('|'),
   };
 }
 
@@ -155,7 +215,14 @@ function legVmStale(leg, trade) {
   const fp = leg.vmMeta && leg.vmMeta.fingerprint;
   if (!fp) return false;
   const now = vmFingerprint(leg, trade);
-  return Object.keys(now).some((k) => now[k] !== (fp[k] === undefined ? null : fp[k]));
+  // only the fields the stored fingerprint actually named: one written before
+  // fills existed still guards the leg it was written for
+  return Object.keys(fp).some((k) => {
+    const a = now[k];
+    const b = fp[k];
+    if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) > 1e-9;
+    return a !== b;
+  });
 }
 
 // The roubles MOEX credited over the life of the position, summed session by
@@ -181,30 +248,30 @@ function legMoneySource(leg, trade) {
 
 // What the model says the leg earned, kept separate so the fact can be measured
 // against it instead of quietly replacing it.
-function legGrossCalcRub(leg, usdRub) {
-  const g = legGross(leg);
+function legGrossCalcRub(leg, usdRub, trade) {
+  const g = legGross(leg, trade);
   return g === null ? null : g * legRateRub(leg, usdRub);
 }
 
 function legGrossRub(leg, usdRub, trade) {
-  if (!hasExit(leg)) return null;   // a figure on an unclosed leg is not money yet
+  if (!legIsClosed(leg, trade)) return null;   // a figure on an unclosed leg is not money yet
   const over = legOverrideRub(leg, trade);
-  return over === null ? legGrossCalcRub(leg, usdRub) : over;
+  return over === null ? legGrossCalcRub(leg, usdRub, trade) : over;
 }
 
 // How far the figure that won stands from the model, as a fraction: +0,317 = the
 // exchange credited 31,7% more than the conversion by the trade's rate suggested.
 function legDeviation(leg, usdRub, trade) {
   const over = legOverrideRub(leg, trade);
-  const model = legGrossCalcRub(leg, usdRub);
+  const model = legGrossCalcRub(leg, usdRub, trade);
   if (over === null || model === null || model === 0) return null;
   return over / model - 1;
 }
 
 // The rouble rate a broker figure implies for this leg — the calibration behind
 // the form's "подобрать из факта": roubles credited per point of price moved.
-function impliedLegRate(leg, factRub) {
-  const g = legGross(leg);
+function impliedLegRate(leg, factRub, trade) {
+  const g = legGross(leg, trade);
   const fact = Number(factRub);
   if (g === null || g === 0) return null;
   if (factRub === null || factRub === undefined || factRub === '' || Number.isNaN(fact)) return null;
@@ -225,13 +292,13 @@ function swapTotalRub(trade) {
 
 // Capital tied up, both legs converted to roubles by their own price currency.
 function positionStartRub(trade) {
-  return trade.legs.reduce((s, leg) => s + legPositionStart(leg) * legPriceMul(leg, trade.usdRub), 0);
+  return trade.legs.reduce((s, leg) => s + legPositionStart(leg, trade) * legPriceMul(leg, trade.usdRub), 0);
 }
 
 function positionEndRub(trade) {
   let sum = 0;
   for (const leg of trade.legs) {
-    const end = legPositionEnd(leg);
+    const end = legPositionEnd(leg, trade);
     if (end === null) return null;
     sum += end * legPriceMul(leg, trade.usdRub);
   }
@@ -288,7 +355,7 @@ function netProfitRub(trade) {
 }
 
 function isClosed(trade) {
-  return Boolean(trade.closeDate) && trade.legs.every(hasExit);
+  return Boolean(trade.closeDate) && trade.legs.every((leg) => legIsClosed(leg, trade));
 }
 
 // Estimated payout ("Payout / перелив"): a MOEX-side tax/rebate approximation.
@@ -315,13 +382,17 @@ function estimatePayout(trade, rate) {
 function computeTrade(trade) {
   return {
     legs: trade.legs.map((leg, i) => {
-      const start = legPositionStart(leg);
-      const end = legPositionEnd(leg);
+      const start = legPositionStart(leg, trade);
+      const end = legPositionEnd(leg, trade);
       const k = legPriceMul(leg, trade.usdRub);
       const rateRub = legRateRub(leg, trade.usdRub);
       const grossRub = legGrossRub(leg, trade.usdRub, trade);
       return {
-        start, end, gross: legGross(leg),
+        start, end, gross: legGross(leg, trade),
+        fills: legFills(leg, trade),
+        units: legUnits(leg, trade),
+        avgEntry: legAvgEntry(leg, trade),
+        avgExit: legAvgExit(leg, trade),
         // same figures in roubles, so a mixed-currency trade can be summed
         startRub: start * k,
         endRub: end === null ? null : end * k,
@@ -331,7 +402,7 @@ function computeTrade(trade) {
         grossMoney: grossRub === null ? null
           : (legPriceCcy(leg) === 'RUB' ? grossRub : (k ? grossRub / k : null)),
         rateRub,
-        grossCalcRub: legGrossCalcRub(leg, trade.usdRub),
+        grossCalcRub: legGrossCalcRub(leg, trade.usdRub, trade),
         factRub: legPnlFactRub(leg),
         vmRub: legVmRub(leg, trade),
         vmStale: legVmStale(leg, trade),
@@ -365,6 +436,7 @@ function computeTrade(trade) {
 
 const _api = {
   legPositionStart, legPositionEnd, legGross,
+  legFills, legUnits, legAvgEntry, legAvgExit, legIsClosed,
   entrySpread, exitSpread, spreadTotal, spreadCollected, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,

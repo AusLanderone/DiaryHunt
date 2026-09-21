@@ -536,3 +536,90 @@ test('trade totals and payout follow the clearing figure too', () => {
   assert.strictEqual(c.legs[0].vmStale, false);
   assert.strictEqual(c.legs[0].source, 'clearing');
 });
+
+// ---------- a leg as a list of executions ----------
+//
+// A position is rarely one click. Trade #13 was entered at 21 lots against 20
+// on the other venue, and the imbalance was corrected part way — which the old
+// shape (one price, one size) could not express, so the clearing sum applied 21
+// lots to sessions the position never had. A leg is therefore a list of fills;
+// a leg without one reads exactly as it always did.
+const fillsLeg = {
+  exchange: 'MOEX', side: 'Шорт', feeRub: 550, priceCcy: 'USD', role: 'mul',
+  fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-09-03', price: 4496.5, units: 1, kind: 'out' },   // the imbalance taken off
+    { date: '2026-09-17', price: 4326.4, units: 20, kind: 'out' },
+  ],
+};
+const fillsTrade = { usdRub: 85.43, openDate: '2026-08-28', closeDate: '2026-09-17', payout: 0,
+  legs: [fillsLeg, { exchange: 'FOREX', side: 'Лонг', entryPrice: 4520.7, units: 20, exitPrice: 4319.89, feeRub: 60, role: 'div' }] };
+
+test('a leg with no fills reads as the single entry and exit it always was', () => {
+  const f = calc.legFills(trade1.legs[0], { openDate: '2026-08-13', closeDate: '2026-08-13' });
+  assert.deepStrictEqual(f, [
+    { date: '2026-08-13', price: 1.1505, units: 42000, kind: 'in' },
+    { date: '2026-08-13', price: 1.1519, units: 42000, kind: 'out' },
+  ]);
+  assert.deepStrictEqual(calc.legFills({ entryPrice: 5, units: 2, exitPrice: null }, {}),
+    [{ date: null, price: 5, units: 2, kind: 'in' }], 'an open leg has only its entry');
+});
+
+test('size, average prices and gross come off the fills', () => {
+  near(calc.legUnits(fillsLeg), 21);              // the position that was opened
+  near(calc.legAvgEntry(fillsLeg), 4538);
+  near(calc.legAvgExit(fillsLeg), (4496.5 * 1 + 4326.4 * 20) / 21, 1e-9);
+  // short: what came in minus what went out
+  near(calc.legGross(fillsLeg), 4538 * 21 - (4496.5 + 4326.4 * 20), 1e-6);
+  near(calc.legPositionStart(fillsLeg), 4538 * 21);
+  near(calc.legPositionEnd(fillsLeg), 4496.5 + 4326.4 * 20, 1e-6);
+});
+
+test('a leg is closed when everything opened has been closed', () => {
+  assert.strictEqual(calc.legIsClosed(fillsLeg), true);
+  const half = { ...fillsLeg, fills: fillsLeg.fills.slice(0, 2) };
+  assert.strictEqual(calc.legIsClosed(half), false, '20 of 21 lots still open');
+  assert.strictEqual(calc.legGross(half), null);
+  assert.strictEqual(calc.isClosed({ ...fillsTrade, legs: [half, fillsTrade.legs[1]] }), false);
+  assert.strictEqual(calc.isClosed(fillsTrade), true);
+});
+
+test('the spread reads the average prices of the fills', () => {
+  // entry spread is unchanged — the entry is still one fill at 4538
+  near(calc.entrySpread(fillsTrade), calc.entrySpread({ ...fillsTrade,
+    legs: [{ ...fillsLeg, fills: undefined, entryPrice: 4538, units: 21, exitPrice: 4326.4 }, fillsTrade.legs[1]] }), 1e-9);
+  // the exit spread uses the average of the two closing fills, not the last one
+  const avgExit = (4496.5 + 4326.4 * 20) / 21;
+  const same = { ...fillsTrade, legs: [{ exchange: 'MOEX', side: 'Шорт', role: 'mul',
+    entryPrice: 4538, units: 21, exitPrice: avgExit, feeRub: 550 }, fillsTrade.legs[1]] };
+  near(calc.exitSpread(fillsTrade), calc.exitSpread(same), 1e-12);
+});
+
+test('the money of a multi-fill leg converts like any other', () => {
+  const c = calc.computeTrade(fillsTrade);
+  near(c.legs[0].gross, calc.legGross(fillsLeg), 1e-6);
+  near(c.legs[0].grossRub, calc.legGross(fillsLeg) * 85.43, 1e-4);
+  near(c.legs[0].startRub, 4538 * 21 * 85.43, 1e-4);
+  near(c.pnlRub, calc.legGross(fillsLeg) * 85.43 + c.legs[1].grossRub - 610, 0.01);
+});
+
+test('the fingerprint of a stored clearing figure follows the fills', () => {
+  const fp = calc.vmFingerprint(fillsLeg, fillsTrade);
+  const moved = calc.vmFingerprint({ ...fillsLeg, fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-09-04', price: 4496.5, units: 1, kind: 'out' },   // one day later
+    { date: '2026-09-17', price: 4326.4, units: 20, kind: 'out' },
+  ] }, fillsTrade);
+  assert.notDeepStrictEqual(moved, fp, 'a fill moved to another day is another trade');
+});
+
+// A fingerprint written before fills existed only names the fields it knew.
+// Comparing it must not turn every stored figure stale on upgrade.
+test('an older fingerprint still validates the leg it was written for', () => {
+  const leg = { ...trade23.legs[0], vmRub: 11988, vmMeta: { secid: 'GDU6', sessions: 1, fingerprint: {
+    entryPrice: 4427.2, exitPrice: 4420.42, units: 21, side: 'Шорт',
+    openDate: '2026-09-21', closeDate: '2026-09-21' } } };
+  const t = { ...trade23, openDate: '2026-09-21' };
+  assert.strictEqual(calc.legVmStale(leg, t), false);
+  assert.strictEqual(calc.legVmStale({ ...leg, units: 20 }, t), true);
+});

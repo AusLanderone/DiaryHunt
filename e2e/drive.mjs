@@ -2099,6 +2099,147 @@ try {
   check('the switch is remembered', savedToggle === true, String(savedToggle));
   await page.evaluate(() => document.querySelector('.modal-backdrop').remove());
 
+  // ---------------------------------------------------------------------
+  console.log('\n[13] a leg filled in pieces');
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+
+  const split = await page.evaluate(() => {
+    const setVal = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const byLabel = (re) => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => re.test(l.textContent))?.querySelector('input, select, textarea');
+    setVal(byLabel(/дата открытия/i), '2026-08-28');
+    setVal(byLabel(/дата закрытия/i), '2026-09-17');
+    setVal(byLabel(/тикер/i), 'GOLD');
+    setVal(byLabel(/курс/i), 85.43);
+    setVal(byLabel(/комментарий/i), 'e2e fills');
+    const legs = [
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 4538, units: 21, exitPrice: 4326.4, feeRub: 550 },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 4520.7, units: 20, exitPrice: 4319.89, feeRub: 60 },
+    ];
+    const boxes = document.querySelectorAll('.leg-box');
+    legs.forEach((leg, i) => {
+      const box = boxes[i];
+      const sideSel = box.querySelector('select');
+      sideSel.value = leg.side; sideSel.dispatchEvent(new Event('input', { bubbles: true }));
+      const [ex, e, u, x, f] = box.querySelectorAll('input');
+      setVal(ex, leg.exchange);
+      setVal(e, leg.entryPrice); setVal(u, leg.units); setVal(x, leg.exitPrice); setVal(f, leg.feeRub);
+    });
+    const live = () => document.querySelector('.live').innerText;
+    const plain = live();
+    // split the MOEX leg into executions
+    const box = document.querySelectorAll('.leg-box')[0];
+    [...box.querySelectorAll('button')].find((b) => /исполнения/.test(b.textContent)).click();
+    const rows = () => [...box.querySelectorAll('.fill-row:not(.head)')];
+    const seeded = rows().map((r) => {
+      const [d, pr, q] = r.querySelectorAll('input');
+      return { date: d.value, price: pr.value, units: q.value, kind: r.querySelector('select').value };
+    });
+    return { plain, seeded, afterSplit: live(), hiddenPlain: !!box.querySelector('label').hidden,
+      summary: box.querySelector('.fills').nextSibling.textContent };
+  });
+  check('splitting seeds the table from the entry and the exit',
+    split.seeded.length === 2 && split.seeded[0].price === '4538' && split.seeded[0].date === '2026-08-28'
+    && split.seeded[1].kind === 'out' && split.seeded[1].date === '2026-09-17', JSON.stringify(split.seeded));
+  check('and changes nothing while it says the same thing',
+    split.afterSplit === split.plain, `${split.plain} || ${split.afterSplit}`);
+  check('the leg reports its averages and what is still open',
+    /средний вход 4 ?538/.test(split.summary.replace(/\u00a0/g, ' ')) && /открыто 21 \/ закрыто 21/.test(split.summary),
+    split.summary);
+
+  // now the real shape: 21 opened, one taken off part way, twenty closed
+  const pieces = await page.evaluate(() => {
+    const box = document.querySelectorAll('.leg-box')[0];
+    const rows = () => [...box.querySelectorAll('.fill-row:not(.head)')];
+    const setRow = (i, { date, price, units, kind }) => {
+      const r = rows()[i];
+      const [d, pr, q] = r.querySelectorAll('input');
+      const k = r.querySelector('select');
+      const set = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+      if (date) set(d, date);
+      if (price) set(pr, price);
+      if (units) set(q, units);
+      if (kind) { k.value = kind; k.dispatchEvent(new Event('change', { bubbles: true })); }
+    };
+    [...box.querySelectorAll('button')].find((b) => /\+ исполнение/.test(b.textContent)).click();
+    // rows are kept in date order, so address them by what they hold
+    const indexOf = (pred) => rows().findIndex(pred);
+    const priceOf = (r) => r.querySelectorAll('input')[1].value;
+    const dateOfRow = (r) => r.querySelectorAll('input')[0].value;
+    setRow(indexOf((r) => priceOf(r) === ''), { date: '2026-09-03', price: 4496.5, units: 1, kind: 'out' });
+    setRow(indexOf((r) => dateOfRow(r) === '2026-09-17'), { units: 20 });
+    const sum = box.querySelector('.fills').nextSibling.textContent;
+    return { sum, live: document.querySelector('.live').innerText, rows: rows().length };
+  });
+  check('a third execution can be added and the leg still balances',
+    pieces.rows === 3 && /открыто 21 \/ закрыто 21/.test(pieces.sum), pieces.sum);
+  check('the closed trade recomputes on the new shape',
+    /ЗАКРЫТА/.test(pieces.live), pieces.live.slice(-40));
+  await page.screenshot({ path: path.join(SHOT, '13-fills.png') });
+
+  // the table must not be rebuilt under the caret while a row is being typed
+  const priceSel = '.fill-row:not(.head) input[type=number]';
+  await page.click(priceSel);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('4538.5');
+  const typed = await page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    return { value: el.value, focused: document.activeElement === el,
+      summary: document.querySelector('.fills').nextSibling.textContent };
+  }, priceSel);
+  check('typing in an execution keeps the caret in the field',
+    typed.focused && typed.value === '4538.5', JSON.stringify(typed));
+  check('and the summary follows every keystroke',
+    /средний вход 4 ?538,5/.test(typed.summary.replace(/ /g, ' ')), typed.summary);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('4538');
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForSelector('.modal', { state: 'detached', timeout: 15000 });
+
+  const storedFills = await page.evaluate(async () => {
+    const t = [...await window.api.trades.list()].sort((a, b) => b.num - a.num)[0];
+    const c = window.calc.computeTrade(t);
+    return { num: t.num, fills: t.legs[0].fills, units: c.legs[0].units,
+      avgEntry: c.legs[0].avgEntry, avgExit: c.legs[0].avgExit,
+      entryPrice: t.legs[0].entryPrice, gross: c.legs[0].gross, closed: c.closed };
+  });
+  check('the executions are stored on the leg',
+    storedFills.fills && storedFills.fills.length === 3
+    && storedFills.fills[1].units === 1 && storedFills.fills[1].kind === 'out'
+    && storedFills.fills[1].date === '2026-09-03',
+    JSON.stringify(storedFills.fills));
+  check('the leg keeps an average price for plain readers',
+    Math.abs(storedFills.entryPrice - 4538) < 1e-9
+    && Math.abs(storedFills.avgExit - (4496.5 + 4326.4 * 20) / 21) < 1e-9, JSON.stringify(storedFills));
+  check('and the trade counts as closed on 21 in, 21 out',
+    storedFills.closed === true && Math.abs(storedFills.units - 21) < 1e-9, JSON.stringify(storedFills));
+  check('the gross is what came in minus what went out',
+    Math.abs(storedFills.gross - (4538 * 21 - (4496.5 + 4326.4 * 20))) < 1e-6, String(storedFills.gross));
+
+  await page.evaluate((num) => {
+    const row = [...document.querySelectorAll('.trade-row')].find((r) => r.innerText.trim().startsWith(String(num)));
+    if (row && !row.classList.contains('expanded')) row.click();
+  }, storedFills.num);
+  await page.waitForSelector('.trade-detail', { timeout: 5000 });
+  await page.waitForFunction(() => [...document.querySelectorAll('.trade-detail')]
+    .some((d) => d.textContent.includes('e2e fills')), null, { timeout: 5000 });
+  const detailFills = await page.evaluate(() => {
+    const detail = [...document.querySelectorAll('.trade-detail')]
+      .find((d) => d.textContent.includes('e2e fills'));
+    const cell = detail.querySelector('.detail-leg:not(.head) .prices');
+    const units = detail.querySelector('.detail-leg:not(.head) .units');
+    return { text: cell.textContent, title: cell.title, units: units.textContent };
+  });
+  check('the journal shows the average prices of a split leg',
+    /4 ?538/.test(detailFills.text.replace(/\u00a0/g, ' ')), detailFills.text);
+  check('and lists the executions on hover',
+    /вход 21/.test(detailFills.title) && /выход 1/.test(detailFills.title), detailFills.title);
+  check('with the execution count beside the size',
+    /3 исп/.test(detailFills.units), detailFills.units);
+
 
 } catch (err) {
   failures++;

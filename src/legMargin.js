@@ -2,6 +2,7 @@
 
 const rates = require('./rates');
 const vm = require('./variationMargin');
+const calc = require('./calc');
 
 // Puts the pieces together for one MOEX leg: find the contract, read its
 // settlement prices and the official rate day by day, then hand both to the
@@ -15,10 +16,16 @@ const shift = (iso, days) => {
 };
 
 async function computeLegMargin({ get, cache, today, trade, leg, secid }) {
-  const openDate = trade.openDate;
-  const closeDate = trade.closeDate;
-  if (!openDate || !closeDate || leg.exitPrice === null || leg.exitPrice === undefined || leg.exitPrice === '') {
-    throw new Error('Сделка не закрыта: вариационную маржу считать не из чего');
+  if (!calc.legIsClosed(leg, trade)) {
+    throw new Error('Нога не закрыта: вариационную маржу считать не из чего');
+  }
+  // the span is the leg's own: with several fills it can be narrower than the
+  // trade, and the contract is the one traded on the day of the first fill
+  const fills = calc.legFills(leg, trade);
+  const openDate = fills[0].date || trade.openDate;
+  const closeDate = fills[fills.length - 1].date || trade.closeDate;
+  if (!openDate || !closeDate) {
+    throw new Error('У ноги нет дат исполнения: вариационную маржу считать не из чего');
   }
   const assetCode = String(trade.ticker || '').trim().toUpperCase();
   // a range that reaches today is still moving — today's clearing has not happened
@@ -28,7 +35,7 @@ async function computeLegMargin({ get, cache, today, trade, leg, secid }) {
   if (!contract) {
     const rows = await cache.remember(`contracts|${assetCode}|${openDate}`, settled(openDate),
       () => rates.fetchContracts({ get, assetCode, date: openDate }));
-    contract = vm.pickContract(rows || [], leg.entryPrice);
+    contract = vm.pickContract(rows || [], fills[0].price);
     if (!contract) {
       throw new Error(`MOEX не знает контракт «${assetCode}» на ${openDate} — впишите код контракта вручную`);
     }

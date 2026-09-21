@@ -75,3 +75,26 @@ test('csv carries the rouble side of a leg', () => {
   assert.strictEqual(col(forex, '₽ за пункт'), '84.2', 'a leg without its own rate reports the trade rate');
   assert.strictEqual(col(forex, 'Факт PnL ₽'), '', 'and no fact');
 });
+
+test('csv rows line up with the header, fills and all', () => {
+  const csv = tradesToCsv([{
+    num: 30, openDate: '2026-08-28', closeDate: '2026-09-17', ticker: 'GOLD', usdRub: 85.43,
+    legs: [
+      { exchange: 'MOEX', side: 'Шорт', feeRub: 550, fills: [
+        { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+        { date: '2026-09-03', price: 4496.5, units: 1, kind: 'out' },
+        { date: '2026-09-17', price: 4326.4, units: 20, kind: 'out' },
+      ] },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 4520.7, units: 20, exitPrice: 4319.89, feeRub: 60 },
+    ],
+  }]);
+  const rows = csv.trim().split('\n');
+  const head = rows[0].split(',');
+  rows.forEach((r, i) => assert.strictEqual(r.split(',').length, head.length, `строка ${i} шире шапки`));
+  const col = (line, name) => line.split(',')[head.indexOf(name)];
+  assert.strictEqual(col(rows[1], 'Исполнений'), '3');
+  assert.strictEqual(col(rows[1], 'Кол единиц'), '21');
+  assert.strictEqual(col(rows[1], 'Цена вход'), '4538');
+  assert.strictEqual(col(rows[1], 'Цена выход'), String((4496.5 + 4326.4 * 20) / 21));
+  assert.strictEqual(col(rows[2], 'Исполнений'), '2', 'a plain leg is still two executions');
+});

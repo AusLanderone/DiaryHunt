@@ -62,10 +62,13 @@ const DAY = 86400000;
 const asUTC = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return Date.UTC(y, m - 1, d); };
 
 // Days a trade was held. An open trade has no span yet, so null — those rows
-// sink to the bottom, the same way rows without a profit do.
+// sink to the bottom, the same way rows without a profit do. A close date
+// before the open date is a typo, not a negative holding: it says nothing
+// rather than landing the trade in the «same day» band.
 function heldDays(t) {
   if (!t.openDate || !t.closeDate) return null;
-  return Math.round((asUTC(t.closeDate) - asUTC(t.openDate)) / DAY);
+  const days = Math.round((asUTC(t.closeDate) - asUTC(t.openDate)) / DAY);
+  return days < 0 ? null : days;
 }
 
 // The three figures a row carries beyond its money: how big the trade was, how
@@ -127,10 +130,17 @@ function nextSort(current, key) {
 // [{ key: '2026-08', label: 'август 2026', trades, count, openCount, profit }]
 // Months run newest first; inside a month the given order is kept, so the
 // active sort still decides what the reader sees at the top of each block.
+//
+// A closed trade belongs to the month it was CLOSED in — that is when the money
+// landed, and it is the month the statistics tab counts it in. Grouping by the
+// open date instead made the same month read differently on the two tabs. An
+// open trade has only its start, so that is where it sits.
+const monthKey = (t) => String((t.closeDate || t.openDate) || '').slice(0, 7) || '—';
+
 function groupByMonth(trades) {
   const map = new Map();
   for (const t of trades) {
-    const key = String(t.openDate || '').slice(0, 7) || '—';
+    const key = monthKey(t);
     if (!map.has(key)) {
       const [y, m] = key.split('-');
       map.set(key, {

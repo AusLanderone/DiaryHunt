@@ -169,3 +169,43 @@ test('journalLine — a withdrawal lowers it, and no flows behave as before', ()
     1000000 + 100000 - 300000);
   near(B.journalLine(snaps, trades)[1], 1100000);
 });
+
+// ---------- what the audit turned up ----------
+
+test('the first snapshot is the starting line, not a starting line plus that day', () => {
+  const snaps = [snap({ id: 'a', date: '2026-08-13', usdRub: 80,
+    accounts: [{ name: 'MOEX', amount: 1000000, ccy: 'RUB' }] })];
+  const closedThatDay = {
+    num: 1, ticker: 'ED', openDate: '2026-08-13', closeDate: '2026-08-13',
+    usdRub: 80, payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 105, feeRub: 0 },
+    ],
+  };
+  const [first] = B.journalLine(snaps, [closedThatDay], []);
+  near(first, 1000000, 0.01);   // the mark already holds that trade's profit
+});
+
+test('only what happened after the first mark is added to it', () => {
+  const snaps = [
+    snap({ id: 'a', date: '2026-08-13', accounts: [{ name: 'MOEX', amount: 1000000, ccy: 'RUB' }] }),
+    snap({ id: 'b', date: '2026-08-20', accounts: [{ name: 'MOEX', amount: 1300000, ccy: 'RUB' }] }),
+  ];
+  const mk = (num, closeDate) => ({
+    num, ticker: 'ED', openDate: '2026-08-12', closeDate, usdRub: 80, payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 100, feeRub: 0 },
+    ],
+  });
+  const before = mk(1, '2026-08-13');     // on the mark: already inside it
+  const after = mk(2, '2026-08-18');      // after it: counts
+  const line = B.journalLine(snaps, [before, after], [
+    { date: '2026-08-13', account: 'MOEX', amount: 50000, ccy: 'RUB', kind: 'in' },   // already inside
+    { date: '2026-08-15', account: 'MOEX', amount: 20000, ccy: 'RUB', kind: 'in' },   // counts
+  ]);
+  near(line[0], 1000000, 0.01);
+  // the trade moved 10 points on 10 units: 100 $ at 80 ₽, plus the 20 000 ₽ deposit
+  near(line[1], 1000000 + 100 * 80 + 20000, 0.01);
+});

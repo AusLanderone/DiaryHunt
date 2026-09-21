@@ -122,7 +122,7 @@ function chartCard(title, cls, cfg) {
   return { box, canvas };
 }
 
-// ---------- equity curve (with the deepest drawdown marked) ----------
+// ---------- equity curve ----------
 
 // The curve answers when pointed at: every node carries the day it belongs to,
 // what the diary had made by then, and what that trade brought.
@@ -923,7 +923,10 @@ function renderBody(container, trades) {
   hideTip();
 
   const inPeriod = SF().apply(an.filterByPeriod(trades, period), theFilter());
-  const closed = inPeriod.filter((t) => window.calc.isClosed(t)).sort((a, b) => a.num - b.num);
+  // in the order the money arrived: a trade opened earlier can close later, and
+  // the curve is a curve in time, not in entry order
+  const closed = inPeriod.filter((t) => window.calc.isClosed(t))
+    .sort((a, b) => (a.closeDate === b.closeDate ? a.num - b.num : (a.closeDate < b.closeDate ? -1 : 1)));
   const open = inPeriod.length - closed.length;
   const profits = closed.map((t) => window.calc.netProfitRub(t));
   const total = profits.reduce((s, v) => s + v, 0);

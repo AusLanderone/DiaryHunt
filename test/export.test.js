@@ -57,3 +57,21 @@ test('csv — the collected spread rides along with the entry/exit spreads', () 
   assert.ok(Number(cells[i]) > 0, `collected spread ${cells[i]} must be positive on a winning trade`);
   assert.strictEqual(rows[2].split(',')[i], '');   // trade-level, so only the first leg row carries it
 });
+
+test('csv carries the rouble side of a leg', () => {
+  const csv = tradesToCsv([{
+    num: 23, openDate: '2026-09-21', closeDate: '2026-09-21', ticker: 'GOLD', usdRub: 84.2,
+    legs: [
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 4427.2, units: 21, exitPrice: 4420.42,
+        feeRub: 180, rateRub: 110.89, pnlFactRub: 15788.4 },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 4351.95, units: 20, exitPrice: 4345.02, feeRub: 105 },
+    ],
+  }]);
+  const [head, moex, forex] = csv.trim().split('\n');
+  const col = (line, name) => line.split(',')[head.split(',').indexOf(name)];
+  assert.strictEqual(col(moex, '₽ за пункт'), '110.89');
+  assert.strictEqual(col(moex, 'Факт PnL ₽'), '15788.4');
+  assert.strictEqual(col(moex, 'PnL ноги ₽'), '15788.4');
+  assert.strictEqual(col(forex, '₽ за пункт'), '84.2', 'a leg without its own rate reports the trade rate');
+  assert.strictEqual(col(forex, 'Факт PnL ₽'), '', 'and no fact');
+});

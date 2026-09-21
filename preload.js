@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
     get: () => ipcRenderer.invoke('config:get'),
     addItem: (kind, value) => ipcRenderer.invoke('config:addItem', kind, value),
     removeItem: (kind, value) => ipcRenderer.invoke('config:removeItem', kind, value),
+    getPointValue: (ticker) => ipcRenderer.invoke('config:getPointValue', ticker),
+    setPointValue: (ticker, value) => ipcRenderer.invoke('config:setPointValue', ticker, value),
     getSettings: () => ipcRenderer.invoke('config:getSettings'),
     setSettings: (patch) => ipcRenderer.invoke('config:setSettings', patch),
   },
@@ -38,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   rates: {
     usdRub: () => ipcRenderer.invoke('rates:usdRub'),
+    pointValue: (code) => ipcRenderer.invoke('rates:pointValue', code),
   },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
   setZoom: (factor) => webFrame.setZoomFactor(factor), // proper page zoom (fills viewport)

@@ -342,8 +342,19 @@ function tradeDetail(trade, c) {
     const swapIsRub = window.calc.isRubLeg(leg) || leg.swap === undefined || leg.swap === null || leg.swap === '';
     line.append(el('span', 'swap ' + signCls(swapRaw),
       swapIsRub ? rub0(swapRaw) : usd2(swapRaw)));
-    line.append(el('span', 'pnl ' + signCls(lc.gross), lc.gross == null ? '—'
-      : (window.calc.legPriceCcy(leg) === 'RUB' ? rub0(lc.gross) : F.fmtUsd(lc.gross))));
+    // the money the leg made, not the price move: a leg paid in roubles by its
+    // own step value reads the roubles back through the trade rate
+    const pnlCell = el('span', 'pnl ' + signCls(lc.grossMoney), lc.grossMoney == null ? '—'
+      : (window.calc.legPriceCcy(leg) === 'RUB' ? rub0(lc.grossMoney) : F.fmtUsd(lc.grossMoney)));
+    if (lc.factRub !== null && lc.factRub !== undefined) {
+      pnlCell.classList.add('fact');
+      pnlCell.title = `факт ${rub0(lc.factRub)} · расчёт ${rub0(lc.grossCalcRub)}`
+        + (lc.factDeviation == null ? '' : ` · Δ ${(lc.factDeviation * 100).toFixed(1).replace('.', ',')} %`);
+    } else if (lc.grossRub !== null && lc.rateRub && lc.priceCcy !== 'RUB'
+      && Math.abs(lc.rateRub - (Number(trade.usdRub) || 0)) > 1e-9) {
+      pnlCell.title = `1 пункт = ${lc.rateRub} ₽ · ${rub0(lc.grossRub)}`;
+    }
+    line.append(pnlCell);
     legs.append(line);
   });
   box.append(legs);
@@ -366,6 +377,12 @@ function tradeDetail(trade, c) {
     item('Своп', rub0(c.swapTotalRub), signCls(c.swapTotalRub)),
   );
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
+  // what the broker's figures added on top of the model, when any leg carries one
+  const factGap = c.legs.reduce((s2, lc) => (lc.factRub == null || lc.grossCalcRub == null
+    ? s2 : s2 + (lc.factRub - lc.grossCalcRub)), 0);
+  if (c.legs.some((lc) => lc.factRub != null)) {
+    meta.append(item('Факт − расчёт', rub0(factGap), signCls(factGap)));
+  }
   box.append(meta);
 
   if (trade.comment) box.append(el('div', 'detail-comment', trade.comment));

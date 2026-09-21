@@ -105,3 +105,61 @@ test('calc and the margin module fingerprint a leg the same way', () => {
   assert.deepStrictEqual(calc.vmFingerprint(open, { openDate: '2026-09-01', closeDate: '' }),
     vm.fingerprint(open, { openDate: '2026-09-01', closeDate: '' }));
 });
+
+// ---------- a position whose size changes while it is held ----------
+//
+// This is the case the old shape could not express: 21 lots opened, one taken
+// off mid-way, twenty closed at the end. Each session must be valued at the
+// size the position actually had that day.
+const shrinking = {
+  side: 'Шорт',
+  fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-08-31', price: 4505, units: 1, kind: 'out' },
+    { date: '2026-09-01', price: 4400, units: 20, kind: 'out' },
+  ],
+};
+
+test('each session is valued at the size the position had that day', () => {
+  const r = vm.compute({ leg: shrinking, ...trade, settles, rates });
+  assert.strictEqual(r.sessions, 3);
+  // 28.08: 21 lots marked from 4538 to 4531 at 80
+  near(r.rows[0].delta, (4531 - 4538) * 21 * -1 * 80, 0.5);
+  assert.strictEqual(r.rows[0].position, 21);
+  // 31.08: 21 lots from 4531 to 4500, plus the lot closed at 4505, at 81
+  near(r.rows[1].delta, ((4500 - 4531) * 21 * -1 + (4500 - 4505) * 1) * 81, 0.5);
+  assert.strictEqual(r.rows[1].position, 20);
+  // 01.09: the remaining 20 from 4500 to the closing price, at 82
+  near(r.rows[2].delta, (4400 - 4500) * 20 * -1 * 82, 0.5);
+  assert.strictEqual(r.rows[2].position, 0);
+  near(r.rub, 147 * 80 + 646 * 81 + 2000 * 82, 1);
+  // and the sessions add up to the price result of the leg: 33 on one lot, 138 on twenty
+  near(r.rows.reduce((s, x) => s + x.delta / x.rate, 0), 33 + 2760, 1e-6);
+});
+
+test('the same leg written as one entry and one exit is the old sum', () => {
+  const plain = { side: 'Шорт', entryPrice: 4538, exitPrice: 4326.4, units: 21 };
+  const a = vm.compute({ leg: plain, ...trade, settles, rates });
+  const b = vm.compute({ leg: { side: 'Шорт', fills: [
+    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
+    { date: '2026-09-01', price: 4326.4, units: 21, kind: 'out' },
+  ] }, ...trade, settles, rates });
+  near(b.rub, a.rub, 1e-6);
+  assert.strictEqual(b.sessions, a.sessions);
+});
+
+test('a fill on a day the exchange did not clear waits for the next clearing', () => {
+  const weekend = { side: 'Шорт', fills: [
+    { date: '2026-08-29', price: 4538, units: 10, kind: 'in' },   // Saturday: no settle
+    { date: '2026-09-01', price: 4400, units: 10, kind: 'out' },
+  ] };
+  const r = vm.compute({ leg: weekend, openDate: '2026-08-29', closeDate: '2026-09-01', settles, rates });
+  assert.strictEqual(r.sessions, 2);      // 31.08 and the close
+  near(r.rows[0].delta, (4500 - 4538) * 10 * -1 * 81, 0.5);
+  near(r.rub, (4538 - 4400) * 10 * 82 - 38 * 10 * 81 + 38 * 10 * 81, 1e6);  // sane order of magnitude
+});
+
+test('a leg that is not fully closed has no margin', () => {
+  const half = { side: 'Шорт', fills: shrinking.fills.slice(0, 2) };
+  assert.strictEqual(vm.compute({ leg: half, ...trade, settles, rates }), null);
+});

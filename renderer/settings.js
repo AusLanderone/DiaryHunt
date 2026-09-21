@@ -180,7 +180,7 @@
           const legs = t.legs.map((l) => ({ ...l }));
           let changed = false;
           for (const l of legs) {
-            if (!window.calc.isRubLeg(l) || l.exitPrice === null || l.exitPrice === undefined) continue;
+            if (!window.calc.isRubLeg(l) || !window.calc.legIsClosed(l, t)) continue;
             if (window.calc.legPnlFactRub(l) !== null) continue;
             if (window.calc.legVmRub(l, t) !== null) continue;
             clrInfo.textContent = `считаю сделку №${t.num}…`;

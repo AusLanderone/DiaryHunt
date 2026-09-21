@@ -330,8 +330,18 @@ function tradeDetail(trade, c) {
     const p = window.calc.legPriceCcy(leg) === 'RUB'
       ? (v) => (v === null || v === undefined || v === '' ? '—' : rub0(v))
       : price;
-    line.append(el('span', 'prices', `${p(leg.entryPrice)} → ${p(leg.exitPrice)}`));
-    line.append(el('span', 'units', F.fmtNum(leg.units)));
+    // a leg filled in pieces shows its averages, with the pieces on hover
+    const prices = el('span', 'prices', `${p(lc.avgEntry)} → ${p(lc.avgExit)}`);
+    const unitsCell = el('span', 'units', F.fmtNum(Math.round(lc.units * 1e6) / 1e6));
+    if (lc.fills.length > 2) {
+      prices.classList.add('multi');
+      const lines = lc.fills.map((f) => `${shortDate(f.date)} ${f.kind === 'in' ? 'вход' : 'выход'} ${f.units} @ ${f.price}`);
+      prices.title = lines.join('\n');
+      unitsCell.title = prices.title;
+      unitsCell.textContent += ` · ${lc.fills.length} исп.`;
+    }
+    line.append(prices);
+    line.append(unitsCell);
     // position and PnL read in the leg's currency, not always dollars
     const money0 = window.calc.legPriceCcy(leg) === 'RUB' ? rub0 : usd0;
     line.append(el('span', 'pos', `${money0(lc.start)} → ${lc.end === null ? '—' : money0(lc.end)}`));

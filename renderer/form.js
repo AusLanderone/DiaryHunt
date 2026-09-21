@@ -85,6 +85,20 @@ function legInputs(title, leg, defaultEx, index, ctx) {
   vmBtn.title = 'Посчитать вариационную маржу по сессиям: расчётные цены MOEX × курс ЦБ каждого дня';
   const legActions = el('div', { class: 'leg-actions' }, [vmBtn, secid]);
 
+  // ---- executions ----
+  // A position is rarely one click, and its size can change while it is held.
+  // The three plain fields above cover the common case; this table replaces
+  // them when a leg was filled in pieces, and every figure — spread, size,
+  // variation margin — is then read off the list.
+  let fills = Array.isArray(leg.fills) && leg.fills.length
+    ? leg.fills.map((f) => ({ date: f.date || '', price: f.price ?? '', units: f.units ?? '', kind: f.kind === 'out' ? 'out' : 'in' }))
+    : null;
+  const fillsBox = el('div', { class: 'fills' });
+  const fillsSum = el('div', { class: 'leg-note' });
+  const splitBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('⇵ исполнения')]);
+  splitBtn.title = 'Разбить ногу на отдельные исполнения: дата, цена, количество, вход или выход';
+  legActions.prepend(splitBtn);   // the leg switches shape from here
+
   const srcNote = el('div', { class: 'leg-note' });   // where a fetched number came from
   const note = el('div', { class: 'leg-note' });      // what the leg currently computes
 
@@ -106,22 +120,151 @@ function legInputs(title, leg, defaultEx, index, ctx) {
       field('Цена выход', exit), field('Комиссия ₽', fee),
       swapLabel, rateField, factField,
     ]),
-    legActions, srcNote, note,
+    fillsBox, fillsSum, legActions, srcNote, note,
   ]);
 
-  const read = () => ({
-    exchange: ex.value.trim(), side: side.value,
-    entryPrice: entry.value === '' ? null : Number(entry.value),
-    units: Number(units.value),
-    exitPrice: exit.value === '' ? null : Number(exit.value),
-    feeRub: fee.value === '' ? 0 : Number(fee.value),
-    swap: swap.value === '' ? 0 : Number(swap.value),
-    role: role.value,
-    priceCcy: ccy.value,
-    rateRub: rateRub.value === '' ? null : Number(rateRub.value),
-    pnlFactRub: fact.value === '' ? null : Number(fact.value),
-    secid: secid.value.trim().toUpperCase() || null,
-    vmRub, vmMeta,
+  const cleanFills = () => (fills || [])
+    .filter((f) => f.price !== '' && Number(f.units) > 0)
+    .map((f) => ({ date: f.date || null, price: Number(f.price), units: Number(f.units), kind: f.kind }))
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+
+  const read = () => {
+    const base = {
+      exchange: ex.value.trim(), side: side.value,
+      feeRub: fee.value === '' ? 0 : Number(fee.value),
+      swap: swap.value === '' ? 0 : Number(swap.value),
+      role: role.value,
+      priceCcy: ccy.value,
+      rateRub: rateRub.value === '' ? null : Number(rateRub.value),
+      pnlFactRub: fact.value === '' ? null : Number(fact.value),
+      secid: secid.value.trim().toUpperCase() || null,
+      vmRub, vmMeta,
+    };
+    if (!fills) {
+      return { ...base,
+        entryPrice: entry.value === '' ? null : Number(entry.value),
+        units: Number(units.value),
+        exitPrice: exit.value === '' ? null : Number(exit.value) };
+    }
+    // the averages ride along so a plain reader (CSV, an older build restoring a
+    // backup) still sees a price and a size instead of nothing
+    const list = cleanFills();
+    const withFills = { ...base, fills: list };
+    return { ...withFills,
+      entryPrice: window.calc.legAvgEntry(withFills, {}),
+      exitPrice: window.calc.legAvgExit(withFills, {}),
+      units: window.calc.legUnits(withFills, {}) };
+  };
+
+  // The plain fields and the table are two views of the same leg: only one is
+  // shown, and switching either way carries the numbers across.
+  const plainFields = () => [entry, units, exit].map((i) => i.closest('label'));
+  const dateOf = (kind) => {
+    const meta = ctx && ctx.trade ? ctx.trade() : {};
+    return (kind === 'in' ? meta.openDate : meta.closeDate) || '';
+  };
+
+  // Typing in a row must not rebuild the table: the input being typed into
+  // would be replaced and the caret would have nothing to sit on — the same
+  // trap the journal search fell into. Only a structural change redraws.
+  function fillsChanged(structural) {
+    vmRub = null;          // the stored clearing figure described the old shape
+    vmMeta = null;
+    if (structural) renderFills(); else updateFillsSummary();
+    if (ctx && ctx.recompute) ctx.recompute();
+  }
+
+  // chronological order is how a position reads; sorted on structure only,
+  // never while a date is half typed
+  const sortFills = () => {
+    if (fills) fills.sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  };
+
+  function updateFillsSummary() {
+    if (!fills) { fillsSum.textContent = ''; return; }
+    const list = cleanFills();
+    const opened = list.filter((f) => f.kind === 'in').reduce((s2, f) => s2 + f.units, 0);
+    const closed = list.filter((f) => f.kind === 'out').reduce((s2, f) => s2 + f.units, 0);
+    const avg = (kind) => {
+      const rows = list.filter((f) => f.kind === kind);
+      const q = rows.reduce((s2, f) => s2 + f.units, 0);
+      return q ? (rows.reduce((s2, f) => s2 + f.price * f.units, 0) / q) : null;
+    };
+    const fmt = (n) => (n === null ? '—' : (Math.round(n * 1e6) / 1e6).toLocaleString('ru-RU'));
+    const left = opened - closed;
+    fillsSum.className = 'leg-note' + (Math.abs(left) > 1e-9 && closed > 0 ? ' warn' : '');
+    fillsSum.textContent = `средний вход ${fmt(avg('in'))} · средний выход ${fmt(avg('out'))}`
+      + ` · открыто ${fmt(opened)} / закрыто ${fmt(closed)}`
+      + (Math.abs(left) > 1e-9 && closed > 0 ? ` · остаётся ${fmt(left)}` : '');
+  }
+
+  function renderFills() {
+    sortFills();
+    plainFields().forEach((l) => { if (l) l.hidden = !!fills; });
+    fillsBox.hidden = !fills;
+    fillsSum.hidden = !fills;
+    splitBtn.textContent = fills ? '⇵ одно исполнение' : '⇵ исполнения';
+    fillsBox.innerHTML = '';
+    if (!fills) { fillsSum.textContent = ''; return; }
+
+    const head = el('div', { class: 'fill-row head' }, [
+      el('span', {}, [txt('Дата')]), el('span', {}, [txt('Цена')]),
+      el('span', {}, [txt('Кол-во')]), el('span', {}, [txt('')]), el('span', {}, [txt('')]),
+    ]);
+    fillsBox.append(head);
+
+    fills.forEach((f, i) => {
+      const d = el('input', { type: 'date', value: f.date || '' });
+      const pr = el('input', { type: 'number', step: 'any', value: f.price ?? '' });
+      const q = el('input', { type: 'number', step: 'any', value: f.units ?? '' });
+      const k = el('select');
+      [['in', 'вход'], ['out', 'выход']].forEach(([v, l]) => k.append(new Option(l, v)));
+      k.value = f.kind;
+      const del = el('button', { type: 'button', class: 'btn icon' }, [txt('✕')]);
+      del.title = 'Убрать исполнение';
+      d.addEventListener('input', () => { f.date = d.value; fillsChanged(false); });
+      pr.addEventListener('input', () => { f.price = pr.value; fillsChanged(false); });
+      q.addEventListener('input', () => { f.units = q.value; fillsChanged(false); });
+      k.addEventListener('change', () => { f.kind = k.value; fillsChanged(false); });
+      del.onclick = () => { fills.splice(i, 1); fillsChanged(true); };
+      fillsBox.append(el('div', { class: 'fill-row' }, [d, pr, q, k, del]));
+    });
+
+    const add = el('button', { type: 'button', class: 'btn ghost mini' }, [txt('+ исполнение')]);
+    add.onclick = () => {
+      const last = fills[fills.length - 1];
+      const kind = fills.reduce((s2, f) => s2 + (f.kind === 'in' ? Number(f.units || 0) : -Number(f.units || 0)), 0) > 0 ? 'out' : 'in';
+      fills.push({ date: dateOf(kind) || (last ? last.date : ''), price: '', units: '', kind });
+      fillsChanged(true);
+    };
+    fillsBox.append(add);
+
+    updateFillsSummary();
+  }
+
+  splitBtn.addEventListener('click', () => {
+    if (fills) {
+      // fold back: the averages become the plain entry and exit
+      const list = cleanFills();
+      const holder = { fills: list };
+      const avgIn = window.calc.legAvgEntry(holder, {});
+      const avgOut = window.calc.legAvgExit(holder, {});
+      const q = window.calc.legUnits(holder, {});
+      entry.value = avgIn === null ? '' : Math.round(avgIn * 1e6) / 1e6;
+      exit.value = avgOut === null ? '' : Math.round(avgOut * 1e6) / 1e6;
+      units.value = q || '';
+      fills = null;
+    } else {
+      fills = [];
+      if (entry.value !== '' && Number(units.value) > 0) {
+        fills.push({ date: dateOf('in'), price: entry.value, units: units.value, kind: 'in' });
+      }
+      if (exit.value !== '' && Number(units.value) > 0) {
+        fills.push({ date: dateOf('out'), price: exit.value, units: units.value, kind: 'out' });
+      }
+      if (!fills.length) fills.push({ date: dateOf('in'), price: '', units: '', kind: 'in' });
+    }
+    fillsChanged(true);
   });
 
   const applyRate = (value) => {
@@ -234,6 +377,8 @@ function legInputs(title, leg, defaultEx, index, ctx) {
     rateRub.value = value;
     return true;
   };
+
+  renderFills();
 
   return { box, read, setNote, prefillRate,
     inputs: [ex, side, role, ccy, entry, units, exit, fee, swap, rateRub, fact] };
@@ -453,7 +598,8 @@ async function openForm(trade, onSaved) {
   cancel.onclick = () => backdrop.remove();
   save.onclick = async () => {
     const legValues = legFields.map((f) => f.read());
-    if (!ticker.value.trim() || legValues.length < 2 || legValues.some((l) => !l.units)) {
+    if (!ticker.value.trim() || legValues.length < 2
+      || legValues.some((l) => !window.calc.legUnits(l, { openDate: openDate.value, closeDate: closeDate.value }))) {
       alert('Укажите тикер и количество единиц по каждой ноге (минимум две ноги).');
       return;
     }
@@ -469,7 +615,7 @@ async function openForm(trade, onSaved) {
     if (settings.clearingAuto && closeDate.value) {
       const meta = { ticker: tickerValue, openDate: openDate.value, closeDate: closeDate.value };
       for (const l of legValues) {
-        if (!window.calc.isRubLeg(l) || l.exitPrice === null || l.exitPrice === undefined) continue;
+        if (!window.calc.isRubLeg(l) || !window.calc.legIsClosed(l, meta)) continue;
         if (window.calc.legPnlFactRub(l) !== null) continue;      // a broker figure wins anyway
         if (window.calc.legVmRub(l, meta) !== null) continue;     // still fresh
         const r = await window.api.market.legMargin({ trade: meta, leg: l, secid: l.secid || undefined });

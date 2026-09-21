@@ -660,6 +660,26 @@ canvas { display: block; width: 100%; }
 }
 .auto-toggle input { accent-color: var(--accent); cursor: pointer; }
 
+/* a leg in execution mode hides its plain price fields: the modal's own
+   `display: flex` on a label otherwise beats the [hidden] attribute */
+.modal label[hidden] { display: none !important; }
+
+/* the executions of a leg: date, price, size, which way */
+.fills { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+.fills[hidden] { display: none; }
+.fill-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) 104px 32px;
+  gap: 8px; align-items: center;
+}
+.fill-row.head {
+  font-family: var(--sans); font-size: 10px; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted-2);
+}
+.fill-row input, .fill-row select { width: 100%; min-width: 0; }
+.fills .btn.ghost.mini { align-self: flex-start; }
+.detail-leg .prices.multi { border-bottom: 1px dotted var(--muted-2); cursor: help; }
+
 /* the row of actions under a leg's fields: the clearing recompute and the
    contract it was computed against */
 .leg-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }

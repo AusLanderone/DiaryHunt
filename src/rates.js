@@ -12,6 +12,12 @@ const MOEX_URL = 'https://iss.moex.com/iss/engines/futures/markets/forts/securit
   + '?iss.meta=off&iss.only=marketdata&marketdata.columns=SECID,LAST,SETTLEPRICE,UPDATETIME';
 const CBR_URL = 'https://www.cbr.ru/scripts/XML_daily.asp';
 
+// Every FORTS contract with the two fields that say what a price move pays:
+// MINSTEP (the price step) and STEPPRICE (what one step is worth in roubles).
+const FORTS_URL = 'https://iss.moex.com/iss/engines/futures/markets/forts/securities.json'
+  + '?iss.meta=off&iss.only=securities'
+  + '&securities.columns=SECID,SHORTNAME,ASSETCODE,LASTTRADEDATE,MINSTEP,STEPPRICE';
+
 function parseMoex(text) {
   let json;
   try {
@@ -42,6 +48,51 @@ function parseCbr(text) {
   return { rate, source: 'ЦБ РФ', date: date ? date[1] : null };
 }
 
+// Roubles per one point of price, for a MOEX leg that quotes in dollars. The
+// asset code (GOLD, SILV, ED) matches every contract of the series, so the
+// nearest one still trading is the one the diary means; a SECID asks for that
+// contract outright. When they have all expired the last of them still answers,
+// flagged, because a stale step value beats no answer while entering an old trade.
+function parseStepPrice(text, code, today) {
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const sec = json && json.securities;
+  if (!sec || !Array.isArray(sec.data) || !Array.isArray(sec.columns)) return null;
+  const idx = Object.fromEntries(sec.columns.map((c, i) => [c, i]));
+  const want = String(code || '').trim().toUpperCase();
+  if (!want) return null;
+
+  const rows = sec.data
+    .filter((r) => String(r[idx.ASSETCODE] || '').toUpperCase() === want
+      || String(r[idx.SECID] || '').toUpperCase() === want)
+    .map((r) => ({
+      secid: String(r[idx.SECID] || ''),
+      shortName: String(r[idx.SHORTNAME] || ''),
+      assetCode: String(r[idx.ASSETCODE] || ''),
+      lastTradeDate: r[idx.LASTTRADEDATE] || null,
+      minStep: Number(r[idx.MINSTEP]) || 0,
+      stepPrice: Number(r[idx.STEPPRICE]) || 0,
+    }))
+    .filter((r) => r.minStep > 0 && r.stepPrice > 0)
+    .sort((a, b) => String(a.lastTradeDate).localeCompare(String(b.lastTradeDate)));
+  if (!rows.length) return null;
+
+  const day = String(today || new Date().toISOString().slice(0, 10));
+  const live = rows.find((r) => String(r.lastTradeDate) >= day);
+  const row = live || rows[rows.length - 1];
+  return { ...row, pointValue: row.stepPrice / row.minStep, expired: !live };
+}
+
+async function fetchPointValue({ get, code, today }) {
+  const found = parseStepPrice(await get(FORTS_URL), code, today);
+  if (!found) throw new Error(`MOEX не знает инструмент «${code}» или не отдаёт стоимость шага`);
+  return { ...found, source: 'MOEX ISS' };
+}
+
 async function fetchUsdRub({ get }) {
   try {
     const moex = parseMoex(await get(MOEX_URL));
@@ -58,4 +109,5 @@ async function fetchUsdRub({ get }) {
   throw new Error('Не удалось получить курс: MOEX и ЦБ не отвечают');
 }
 
-module.exports = { parseMoex, parseCbr, fetchUsdRub, MOEX_URL, CBR_URL };
+module.exports = { parseMoex, parseCbr, parseStepPrice, fetchUsdRub, fetchPointValue,
+  MOEX_URL, CBR_URL, FORTS_URL };

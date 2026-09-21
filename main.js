@@ -185,24 +185,34 @@ function registerIpc() {
   ipcMain.handle('config:get', () => config.get());
   ipcMain.handle('config:addItem', (_e, kind, value) => config.addItem(kind, value));
   ipcMain.handle('config:removeItem', (_e, kind, value) => config.removeItem(kind, value));
+  ipcMain.handle('config:getPointValue', (_e, ticker) => config.getPointValue(ticker));
+  ipcMain.handle('config:setPointValue', (_e, ticker, value) => config.setPointValue(ticker, value));
   ipcMain.handle('config:getSettings', () => config.getSettings());
   ipcMain.handle('config:setSettings', (_e, patch) => config.setSettings(patch));
   // Live USD/RUB for the trade form. Network lives in main (the renderer is
   // sandboxed); errors come back as { ok: false } so the form can show them.
-  ipcMain.handle('rates:usdRub', async () => {
-    const get = async (url) => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      try {
-        const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'DiaryHunt' } });
-        if (!res.ok) throw new Error(cloudLink.explainHttp(res.status));
-        return await res.text();
-      } finally {
-        clearTimeout(timer);
-      }
-    };
+  const httpGet = async (url) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 8000);
     try {
-      return { ok: true, ...(await rates.fetchUsdRub({ get })) };
+      const res = await fetch(url, { signal: ctrl.signal, headers: { 'User-Agent': 'DiaryHunt' } });
+      if (!res.ok) throw new Error(cloudLink.explainHttp(res.status));
+      return await res.text();
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  ipcMain.handle('rates:usdRub', async () => {
+    try {
+      return { ok: true, ...(await rates.fetchUsdRub({ get: httpGet })) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  // What MOEX itself says one point of an instrument pays, in roubles.
+  ipcMain.handle('rates:pointValue', async (_e, code) => {
+    try {
+      return { ok: true, ...(await rates.fetchPointValue({ get: httpGet, code })) };
     } catch (err) {
       return { ok: false, error: err.message };
     }

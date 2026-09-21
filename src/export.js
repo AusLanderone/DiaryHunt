@@ -7,7 +7,7 @@ const HEADER = [
   'Биржа', 'Сделка', 'Роль', 'Валюта цены', 'Цена вход', 'Кол единиц', 'Цена выход',
   'Комса', 'Своп', 'Своп валюта', 'Своп руб',
   'Позиция начало', 'Вход спред', 'Выход спред', 'Спред итог', 'Спред собран', 'Позиция конец',
-  'PnL gross', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout',
+  'PnL gross', '₽ за пункт', 'PnL ноги ₽', 'Факт PnL ₽', 'PnL net', 'PnL руб', '% PnL net', 'USDRUB', 'Payout',
   'Чистый профит', 'Комментарий',
 ];
 
@@ -49,6 +49,9 @@ function tradesToCsv(trades) {
         first ? c.spreadCollected : '',
         lc.end,
         lc.gross,
+        lc.rateRub,
+        lc.grossRub,
+        lc.factRub,
         first ? c.pnlNet : '',
         first ? c.pnlRub : '',
         first ? c.pnlNetPct : '',

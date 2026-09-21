@@ -1873,6 +1873,131 @@ try {
   const off = await page.evaluate(() => window.api.sync.disable());
   check('sync can be switched off', off.enabled === false, JSON.stringify(off));
 
+  // ---------------------------------------------------------------------
+  console.log('\n[11] a MOEX leg is paid in roubles');
+  // Trade #23 (GOLD, 21.09): the price moved $142,38 on the MOEX leg, but the
+  // exchange credited 15 788,40 ₽ — not $142,38 × 84,20. The leg carries its own
+  // rouble rate, and the broker's figure outright.
+  await page.evaluate(() => document.querySelector('#tab-journal').click());
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+
+  const rub = await page.evaluate(() => {
+    const setVal = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const byLabel = (re) => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => re.test(l.textContent))?.querySelector('input, select, textarea');
+    setVal(byLabel(/дата открытия/i), '2026-09-21');
+    setVal(byLabel(/дата закрытия/i), '2026-09-21');
+    setVal(byLabel(/тикер/i), 'GOLD');
+    setVal(byLabel(/курс/i), 84.2);
+    const legs = [
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 4427.2, units: 21, exitPrice: 4420.42, feeRub: 180 },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 4351.95, units: 20, exitPrice: 4345.02, feeRub: 105 },
+    ];
+    const boxes = document.querySelectorAll('.leg-box');
+    legs.forEach((leg, i) => {
+      const box = boxes[i];
+      const sideSel = box.querySelector('select');
+      sideSel.value = leg.side; sideSel.dispatchEvent(new Event('input', { bubbles: true }));
+      const [ex, e, u, x, f] = box.querySelectorAll('input');
+      setVal(ex, leg.exchange);
+      setVal(e, leg.entryPrice); setVal(u, leg.units); setVal(x, leg.exitPrice); setVal(f, leg.feeRub);
+    });
+    const live = () => document.querySelector('.live').innerText;
+    const payoutInput = () => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => /перелив/i.test(l.textContent)).querySelector('.field-row > input');
+    const before = { live: live(), payout: payoutInput().value };
+
+    // the broker's figure for the MOEX leg
+    const moexBox = document.querySelectorAll('.leg-box')[0];
+    const fieldIn = (box, re) => [...box.querySelectorAll('label')]
+      .find((l) => re.test(l.textContent)).querySelector('input');
+    setVal(fieldIn(moexBox, /факт pnl/i), 15788.4);
+    const withFact = {
+      live: live(), payout: payoutInput().value,
+      note: moexBox.querySelector('.leg-note:last-child').textContent,
+    };
+
+    // and the rate it implies, from the calibration button
+    [...moexBox.querySelectorAll('button')].find((b) => /пункт/.test(b.textContent)).click();
+    const rate = fieldIn(moexBox, /за пункт/i).value;
+    return { before, withFact, rate, ratePlaceholder: fieldIn(moexBox, /за пункт/i).placeholder };
+  });
+  await page.screenshot({ path: path.join(SHOT, '11-leg-roubles.png') });
+
+  check('without the fact the leg reads the old $142,38 → PnL net $0.3952',
+    /\$0\.395/.test(norm(rub.before.live)), rub.before.live);
+  check('auto payout on the plain figure is ≈ −719 ₽',
+    Math.abs(parseFloat(rub.before.payout) + 719.3) < 2, rub.before.payout);
+  check('the broker figure takes over: PnL net $45.53',
+    /\$45\.525/.test(norm(rub.withFact.live)), rub.withFact.live);
+  check('and the net profit lands on 2 885,98 ₽',
+    norm(rub.withFact.live).includes('2885,98₽'), rub.withFact.live);
+  check('and payout follows the roubles that were actually credited (≈ −947 ₽)',
+    Math.abs(parseFloat(rub.withFact.payout) + 947.3) < 2, rub.withFact.payout);
+  check('the leg says how far the model stands from the fact',
+    /расчёт/.test(rub.withFact.note) && /\+31,7|\+31\.7/.test(rub.withFact.note.replace('.', ',')),
+    rub.withFact.note);
+  check('«↧ в ₽/пункт» calibrates the leg to 110,89 ₽ a point',
+    Math.abs(parseFloat(rub.rate) - 110.89) < 0.01, rub.rate);
+  check('an uncalibrated field says it falls back to the trade rate',
+    /по курсу сделки/.test(rub.ratePlaceholder), rub.ratePlaceholder);
+
+  await page.evaluate(() => [...document.querySelectorAll('.modal-buttons .btn')]
+    .find((b) => /сохранить/i.test(b.textContent)).click());
+  await page.waitForSelector('.modal', { state: 'detached', timeout: 8000 });
+
+  await page.evaluate(() => [...document.querySelectorAll('.trade-row')]
+    .find((r) => r.textContent.includes('GOLD')).click());
+  await page.waitForSelector('.trade-detail', { timeout: 5000 });
+  const savedRub = await page.evaluate(async () => {
+    const trades = await window.api.trades.list();
+    const t = [...trades].sort((a, b) => b.num - a.num)[0];
+    const detail = [...document.querySelectorAll('.trade-detail')]
+      .find((d) => d.parentElement.textContent.includes('GOLD'));
+    const pnlCells = [...detail.querySelectorAll('.detail-leg:not(.head) .pnl')];
+    return {
+      legRate: t.legs[0].rateRub, legFact: t.legs[0].pnlFactRub,
+      pointValue: await window.api.config.getPointValue('GOLD'),
+      moexPnl: pnlCells[0].textContent, marked: pnlCells[0].classList.contains('fact'),
+      title: pnlCells[0].title,
+      meta: detail.querySelector('.detail-meta').innerText,
+    };
+  });
+  check('the leg is stored with its rouble rate and the broker figure',
+    Math.abs(savedRub.legRate - 110.89) < 0.01 && Math.abs(savedRub.legFact - 15788.4) < 0.01,
+    JSON.stringify(savedRub));
+  check('the journal shows the money the leg made: $187.51',
+    /\87\.51/.test(norm(savedRub.moexPnl)), savedRub.moexPnl);
+  check('and marks it as the broker figure, with the model in the tooltip',
+    savedRub.marked && /расчёт/.test(savedRub.title), savedRub.title);
+  check('the detail carries «Факт − расчёт»',
+    /ФАКТ − РАСЧЁТ/i.test(savedRub.meta.replace(/\s+/g, ' ')), savedRub.meta);
+  check('GOLD is now calibrated for the next trade',
+    Math.abs(savedRub.pointValue - 110.89) < 0.01, String(savedRub.pointValue));
+
+  // a new trade on the same instrument opens already calibrated
+  await page.evaluate(() => document.querySelector('#btn-add').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const prefilled = await page.evaluate(() => {
+    const setVal = (el, v) => { el.value = String(v); el.dispatchEvent(new Event('input', { bubbles: true })); };
+    const byLabel = (re) => [...document.querySelectorAll('.modal > .grid > label')]
+      .find((l) => re.test(l.textContent))?.querySelector('input, select, textarea');
+    const rateOf = (i) => [...document.querySelectorAll('.leg-box')[i].querySelectorAll('label')]
+      .find((l) => /за пункт/i.test(l.textContent)).querySelector('input').value;
+    setVal(byLabel(/тикер/i), 'GOLD');
+    const moex = rateOf(0);
+    setVal(byLabel(/тикер/i), 'SILV');
+    return { moex, forex: rateOf(1), afterOtherTicker: rateOf(0) };
+  });
+  await page.evaluate(() => document.querySelector('.modal-backdrop').remove());
+  check('typing GOLD prefills the MOEX leg with 110,89 ₽ a point',
+    Math.abs(parseFloat(prefilled.moex) - 110.89) < 0.01, prefilled.moex);
+  check('the FOREX leg is left alone — it is paid in dollars',
+    prefilled.forex === '', `"${prefilled.forex}"`);
+  check('an uncalibrated ticker does not clear what is already there',
+    Math.abs(parseFloat(prefilled.afterOtherTicker) - 110.89) < 0.01, prefilled.afterOtherTicker);
+
 
 } catch (err) {
   failures++;

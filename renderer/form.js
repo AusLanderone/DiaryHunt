@@ -16,7 +16,10 @@ function pill(text, kind) {
   return s;
 }
 
-function legInputs(title, leg, defaultEx, index) {
+const rub0 = (n) => (n === null || n === undefined ? '—'
+  : Math.round(n).toLocaleString('ru-RU') + ' ₽');
+
+function legInputs(title, leg, defaultEx, index, ctx) {
   // editable exchange: type a new one or pick from the shared datalist
   const ex = el('input', { type: 'text', list: 'dh-exlist', value: leg.exchange || defaultEx || '', placeholder: 'биржа ▾', autocomplete: 'off' });
   const side = el('select');
@@ -45,7 +48,42 @@ function legInputs(title, leg, defaultEx, index) {
     swapLabel.firstChild.nodeValue = rub ? 'Своп ₽' : 'Своп $';
     swap.title = rub ? 'Своп по ноге, в рублях (MOEX)' : 'Своп по ноге, в долларах — пересчитается по курсу сделки';
   };
+  // How many roubles one point of price pays on this leg. A dollar leg on a
+  // dollar venue is paid the dollar move at the trade's rate, and the field
+  // stays empty. It exists for the leg that is not: a MOEX future quoted in
+  // dollars credits variation margin in ROUBLES by the contract's price step
+  // value — which is its own number, not the USD/RUB of the day.
+  const rateRub = el('input', { type: 'number', step: 'any', value: leg.rateRub ?? '' });
+  rateRub.title = 'Сколько рублей приносит 1 пункт цены на этой ноге. Пусто = по курсу сделки';
+  const pvBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↻ MOEX')]);
+  pvBtn.title = 'Подтянуть с MOEX по тикеру сделки: стоимость шага цены ÷ шаг цены';
+  const rateField = el('label', {}, [
+    txt('₽ за пункт'),
+    el('div', { class: 'field-row' }, [rateRub, pvBtn]),
+  ]);
+
+  // The broker's own figure for this leg. Entered, it IS the leg's money and
+  // the model becomes a check against it rather than the source of truth.
+  const fact = el('input', { type: 'number', step: 'any', value: leg.pnlFactRub ?? '' });
+  fact.title = 'Фактический PnL ноги в рублях из отчёта брокера. Заполнено — считается по нему';
+  const calBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↧ в ₽/пункт')]);
+  calBtn.title = 'Подобрать ₽ за пункт из факта: факт ÷ (движение цены × количество)';
+  const factField = el('label', {}, [
+    txt('Факт PnL ₽'),
+    el('div', { class: 'field-row' }, [fact, calBtn]),
+  ]);
+
+  const srcNote = el('div', { class: 'leg-note' });   // where a fetched number came from
+  const note = el('div', { class: 'leg-note' });      // what the leg currently computes
+
+  const syncRatePlaceholder = () => {
+    rateRub.placeholder = ccy.value === 'RUB' ? '1 ₽ за пункт' : 'по курсу сделки';
+  };
+  ccy.addEventListener('change', syncRatePlaceholder);
+  syncRatePlaceholder();
+
   ex.addEventListener('input', syncSwapCurrency);
+  ex.addEventListener('input', () => ctx && ctx.prefill && ctx.prefill());
   syncSwapCurrency();
   const box = el('div', { class: 'leg-box' }, [
     el('div', { class: 'leg-head' }, [txt(title)]),
@@ -54,10 +92,12 @@ function legInputs(title, leg, defaultEx, index) {
       field('Роль в спреде', role), field('Валюта цены', ccy),
       field('Цена вход', entry), field('Кол-во единиц', units),
       field('Цена выход', exit), field('Комиссия ₽', fee),
-      swapLabel,
+      swapLabel, rateField, factField,
     ]),
+    srcNote, note,
   ]);
-  return { box, read: () => ({
+
+  const read = () => ({
     exchange: ex.value.trim(), side: side.value,
     entryPrice: entry.value === '' ? null : Number(entry.value),
     units: Number(units.value),
@@ -66,7 +106,84 @@ function legInputs(title, leg, defaultEx, index) {
     swap: swap.value === '' ? 0 : Number(swap.value),
     role: role.value,
     priceCcy: ccy.value,
-  }), inputs: [ex, side, role, ccy, entry, units, exit, fee, swap] };
+    rateRub: rateRub.value === '' ? null : Number(rateRub.value),
+    pnlFactRub: fact.value === '' ? null : Number(fact.value),
+  });
+
+  const applyRate = (value) => {
+    rateRub.value = Math.round(Number(value) * 1e6) / 1e6;
+    rateRub.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+
+  pvBtn.addEventListener('click', async () => {
+    const code = ctx && ctx.ticker ? ctx.ticker() : '';
+    if (!code) {
+      srcNote.className = 'leg-note err';
+      srcNote.textContent = 'сначала впишите тикер сделки';
+      return;
+    }
+    pvBtn.disabled = true;
+    srcNote.className = 'leg-note';
+    srcNote.textContent = 'запрашиваю MOEX…';
+    try {
+      const r = await window.api.rates.pointValue(code);
+      if (!r.ok) {
+        srcNote.className = 'leg-note err';
+        srcNote.textContent = r.error || 'MOEX не ответил';
+        return;
+      }
+      applyRate(r.pointValue);
+      srcNote.textContent = `${r.secid}: шаг ${r.minStep} = ${r.stepPrice} ₽`
+        + (r.expired ? ' · контракт уже истёк' : '');
+    } catch (err) {
+      srcNote.className = 'leg-note err';
+      srcNote.textContent = String(err.message || err);
+    } finally {
+      pvBtn.disabled = false;
+    }
+  });
+
+  calBtn.addEventListener('click', () => {
+    const implied = window.calc.impliedLegRate(read(), fact.value === '' ? null : Number(fact.value));
+    if (implied === null) {
+      srcNote.className = 'leg-note err';
+      srcNote.textContent = 'нужны обе цены, количество и фактическая цифра';
+      return;
+    }
+    applyRate(implied);
+    srcNote.className = 'leg-note';
+    srcNote.textContent = 'подобрано из факта';
+  });
+
+  // The line under the leg says what it currently earns and, when a broker
+  // figure is in, how far the model stands from it.
+  const setNote = (lc) => {
+    note.className = 'leg-note';
+    if (!lc) { note.textContent = ''; return; }
+    const parts = [];
+    if (lc.rateRub) parts.push(`1 пункт = ${(Math.round(lc.rateRub * 1e4) / 1e4).toLocaleString('ru-RU')} ₽`);
+    if (lc.grossRub !== null && lc.grossRub !== undefined) parts.push(`нога ${rub0(lc.grossRub)}`);
+    if (lc.factRub !== null && lc.factRub !== undefined && lc.grossCalcRub !== null) {
+      parts.push(`расчёт ${rub0(lc.grossCalcRub)}`);
+      if (lc.factDeviation !== null && lc.factDeviation !== undefined) {
+        const d = lc.factDeviation * 100;
+        parts.push(`Δ ${d > 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')} %`);
+        if (Math.abs(d) >= 1) note.className = 'leg-note warn';
+      }
+    }
+    note.textContent = parts.join(' · ');
+  };
+
+  // A calibrated instrument fills an empty field on a MOEX leg; a number already
+  // typed is never overwritten.
+  const prefillRate = (value) => {
+    if (rateRub.value !== '' || !window.calc.isRubLeg({ exchange: ex.value })) return false;
+    rateRub.value = value;
+    return true;
+  };
+
+  return { box, read, setNote, prefillRate,
+    inputs: [ex, side, role, ccy, entry, units, exit, fee, swap, rateRub, fact] };
 }
 
 async function openForm(trade, onSaved) {
@@ -141,10 +258,19 @@ async function openForm(trade, onSaved) {
   let legFields = [];
 
   const defaultExchange = (i) => cfg.exchanges[i] || cfg.exchanges[0] || '';
+  const legCtx = { ticker: () => ticker.value.trim(), prefill: () => prefillPointValues() };
+
+  // An instrument calibrated once opens its next trade already calibrated.
+  function prefillPointValues() {
+    const pv = Number((cfg.pointValues || {})[ticker.value.trim().toUpperCase()]);
+    if (!(pv > 0)) return;
+    const filled = legFields.map((f) => f.prefillRate(pv));
+    if (filled.some(Boolean)) recompute();
+  }
 
   function renderLegs(source) {
     legsWrap.innerHTML = '';
-    legFields = source.map((leg, i) => legInputs(`Нога ${i + 1}`, leg, defaultExchange(i), i));
+    legFields = source.map((leg, i) => legInputs(`Нога ${i + 1}`, leg, defaultExchange(i), i, legCtx));
     legFields.forEach((f, i) => {
       if (i >= 2) {
         const del = el('button', { type: 'button', class: 'btn icon leg-remove' }, [txt('✕')]);
@@ -193,6 +319,7 @@ async function openForm(trade, onSaved) {
     formulaLine.textContent = window.calc.spreadFormula(draft());
     const c = window.calc.computeTrade(draft());
     const closed = window.calc.isClosed(draft());
+    legFields.forEach((f, i) => f.setNote(c.legs[i]));
     live.innerHTML = '';
     // legs can be quoted in different currencies, so the position total is roubles
     const rub0 = (n) => (n === null || n === undefined ? '—'
@@ -209,6 +336,7 @@ async function openForm(trade, onSaved) {
     );
   }
   [usdRub, rate, payout, adjustment, closeDate].forEach((i) => i.addEventListener('input', recompute));
+  ticker.addEventListener('input', prefillPointValues);
   renderLegs(t.legs.length ? t.legs : [{}, {}]);
   payoutAuto.addEventListener('change', recompute);
 
@@ -246,7 +374,7 @@ async function openForm(trade, onSaved) {
   const backdrop = el('div', { class: 'modal-backdrop' }, [
     el('div', { class: 'modal' }, [
       el('h2', {}, [txt(trade ? `Сделка №${trade.num}` : 'Новая сделка')]),
-      el('p', { class: 'hint' }, [txt('Курс, дата и payout подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка.')]),
+      el('p', { class: 'hint' }, [txt('Курс, дата и payout подставляются автоматически, «↻ курс» тянет актуальный с рынка — любое поле можно перебить вручную. Пустые «Цена выхода» и «Дата закрытия» = открытая сделка. У ноги MOEX деньги считаются в рублях: «₽ за пункт» — сколько даёт один пункт цены, «Факт PnL ₽» — цифра из отчёта, которая перебивает расчёт.')]),
       el('div', { class: 'grid' }, [
         field('Дата открытия', openDate), field('Дата закрытия', closeDate),
         el('label', {}, [txt('Тип'), type, typeList]), el('label', {}, [txt('Тикер'), ticker, tickerList]),
@@ -277,6 +405,9 @@ async function openForm(trade, onSaved) {
     if (tickerValue && !(cfg.tickers || []).includes(tickerValue)) await window.api.config.addItem('tickers', tickerValue);
     if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
     if (typeValue && !cfg.types.includes(typeValue)) await window.api.config.addItem('types', typeValue);
+    // the rouble value of a point belongs to the instrument, not to this trade
+    const calibrated = legValues.find((l) => window.calc.isRubLeg(l) && Number(l.rateRub) > 0);
+    if (tickerValue && calibrated) await window.api.config.setPointValue(tickerValue, calibrated.rateRub);
     const seenEx = new Set(cfg.exchanges);
     for (const l of legValues) {
       if (l.exchange && !seenEx.has(l.exchange)) { await window.api.config.addItem('exchanges', l.exchange); seenEx.add(l.exchange); }

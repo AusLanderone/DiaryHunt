@@ -107,13 +107,64 @@ function legPriceCcy(leg) {
   return leg.priceCcy === 'RUB' ? 'RUB' : 'USD';
 }
 
+// The multiplier that values a POSITION in roubles: the trade's rate, one leg
+// like another. Volume has to stay comparable between the legs — they are the
+// same ounces on two venues — so it deliberately ignores the leg's own rate.
 function legPriceMul(leg, usdRub) {
   return legPriceCcy(leg) === 'RUB' ? 1 : (Number(usdRub) || 0);
 }
 
-function legGrossRub(leg, usdRub) {
+// The multiplier that values MONEY in roubles: how many roubles one point of
+// price pays. A dollar leg pays the dollar move at the trade's rate — but a
+// MOEX future quoted in dollars (GOLD, SILV, ED) does not: it credits variation
+// margin in roubles by the contract's price step value, which is not the
+// USD/RUB of the day. `rateRub` on the leg is that value; left empty, the old
+// rule stands, so every trade entered before this keeps its numbers.
+function legRateRub(leg, usdRub) {
+  const own = Number(leg.rateRub);
+  if (leg.rateRub !== null && leg.rateRub !== undefined && leg.rateRub !== '' && own > 0) return own;
+  return legPriceCcy(leg) === 'RUB' ? 1 : (Number(usdRub) || 0);
+}
+
+// The broker's own figure for the leg, in roubles. When it is there it IS the
+// money — the model is only an estimate of it.
+const hasFact = (leg) => leg.pnlFactRub !== null && leg.pnlFactRub !== undefined
+  && leg.pnlFactRub !== '' && !Number.isNaN(Number(leg.pnlFactRub));
+
+function legPnlFactRub(leg) {
+  return hasFact(leg) ? Number(leg.pnlFactRub) : null;
+}
+
+// What the model says the leg earned, kept separate so the fact can be measured
+// against it instead of quietly replacing it.
+function legGrossCalcRub(leg, usdRub) {
   const g = legGross(leg);
-  return g === null ? null : g * legPriceMul(leg, usdRub);
+  return g === null ? null : g * legRateRub(leg, usdRub);
+}
+
+function legGrossRub(leg, usdRub) {
+  if (!hasExit(leg)) return null;   // a fact on an unclosed leg is not money yet
+  const fact = legPnlFactRub(leg);
+  return fact === null ? legGrossCalcRub(leg, usdRub) : fact;
+}
+
+// How far the fact stands from the model, as a fraction: +0,317 = the exchange
+// credited 31,7% more than the conversion by the trade's rate suggested.
+function legFactDeviation(leg, usdRub) {
+  const fact = legPnlFactRub(leg);
+  const model = legGrossCalcRub(leg, usdRub);
+  if (fact === null || model === null || model === 0) return null;
+  return fact / model - 1;
+}
+
+// The rouble rate a broker figure implies for this leg — the calibration behind
+// the form's "подобрать из факта": roubles credited per point of price moved.
+function impliedLegRate(leg, factRub) {
+  const g = legGross(leg);
+  const fact = Number(factRub);
+  if (g === null || g === 0) return null;
+  if (factRub === null || factRub === undefined || factRub === '' || Number.isNaN(fact)) return null;
+  return fact / g;
 }
 
 function legSwapRub(leg, usdRub) {
@@ -199,20 +250,22 @@ function isClosed(trade) {
 // Estimated payout ("Payout / перелив"): a MOEX-side tax/rebate approximation.
 // The exact figure comes from the MOEX platform; this preview is close.
 // rate is a fraction (e.g. 0.06). Returns ₽, or null if the MOEX leg is unclosed.
-// - MOEX leg in profit  -> taxed: payout = -rate * (MOEX gross $ * usdRub)
+// Both branches read the legs' ROUBLE figures — the broker's fact when the leg
+// carries one — because the tax is levied on the roubles the exchange credited,
+// not on a dollar move converted at the trade's rate.
+// - MOEX leg in profit  -> taxed: payout = -rate * (MOEX leg ₽)
 // - MOEX leg in loss    -> rebate on transferring the other legs' profit back to
-//                          MOEX: payout = +rate * (other legs' profit $ * usdRub)
+//                          MOEX: payout = +rate * (other legs' profit ₽)
 function estimatePayout(trade, rate) {
-  const usd = Number(trade.usdRub) || 0;
   const moex = trade.legs.find((l) => l.exchange === 'MOEX');
   if (!moex) return null;
-  const g = legGross(moex);
+  const g = legGrossRub(moex, trade.usdRub);
   if (g === null) return null;
-  if (g > 0) return -rate * g * usd;
+  if (g > 0) return -rate * g;
   const otherProfit = trade.legs
     .filter((l) => l !== moex)
-    .reduce((s, l) => { const lg = legGross(l); return s + (lg && lg > 0 ? lg : 0); }, 0);
-  return rate * otherProfit * usd;
+    .reduce((s, l) => { const lg = legGrossRub(l, trade.usdRub); return s + (lg && lg > 0 ? lg : 0); }, 0);
+  return rate * otherProfit;
 }
 
 function computeTrade(trade) {
@@ -221,12 +274,22 @@ function computeTrade(trade) {
       const start = legPositionStart(leg);
       const end = legPositionEnd(leg);
       const k = legPriceMul(leg, trade.usdRub);
+      const rateRub = legRateRub(leg, trade.usdRub);
+      const grossRub = legGrossRub(leg, trade.usdRub);
       return {
         start, end, gross: legGross(leg),
         // same figures in roubles, so a mixed-currency trade can be summed
         startRub: start * k,
         endRub: end === null ? null : end * k,
-        grossRub: legGrossRub(leg, trade.usdRub),
+        grossRub,
+        // the money the leg actually made, read in the currency it quotes in:
+        // the roubles back through the trade rate for a dollar leg
+        grossMoney: grossRub === null ? null
+          : (legPriceCcy(leg) === 'RUB' ? grossRub : (k ? grossRub / k : null)),
+        rateRub,
+        grossCalcRub: legGrossCalcRub(leg, trade.usdRub),
+        factRub: legPnlFactRub(leg),
+        factDeviation: legFactDeviation(leg, trade.usdRub),
         swapRub: legSwapRub(leg, trade.usdRub),
         priceCcy: legPriceCcy(leg),
         role: legRole(leg, i),
@@ -257,6 +320,7 @@ const _api = {
   entrySpread, exitSpread, spreadTotal, spreadCollected, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
+  legRateRub, legPnlFactRub, legGrossCalcRub, legFactDeviation, impliedLegRate,
   positionStartAvgRub, positionEndAvgRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,

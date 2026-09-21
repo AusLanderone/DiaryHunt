@@ -372,3 +372,112 @@ test('spread collected — nothing to show while a trade is open or half filled'
   const noEntry = { ...trade1, legs: trade1.legs.map((l, i) => (i ? l : { ...l, entryPrice: '' })) };
   assert.strictEqual(calc.spreadCollected(noEntry), null);
 });
+
+// ---------- the rouble side of a leg ----------
+//
+// Trade #23 (GOLD, 21.09). The MOEX leg moved 6,78 points on 21 lots — $142,38
+// — but MOEX credits variation margin in ROUBLES, by the contract's own price
+// step value, not by the trade's USD/RUB: the broker's figure was 15 788,40 ₽,
+// i.e. 110,89 ₽ per point against the 84,20 the trade was converted at. So the
+// leg carries its own rouble rate, and may carry the broker's figure outright.
+const trade23 = {
+  usdRub: 84.2, payout: -719.3, adjustment: 0, closeDate: '2026-09-21', payoutRate: 0.06,
+  legs: [
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 4427.2, units: 21, exitPrice: 4420.42, feeRub: 180, priceCcy: 'USD', role: 'mul' },
+    { exchange: 'FOREX', side: 'Лонг', entryPrice: 4351.95, units: 20, exitPrice: 4345.02, feeRub: 105, priceCcy: 'USD', role: 'div' },
+  ],
+};
+const moexLeg = (patch) => ({ ...trade23, legs: [{ ...trade23.legs[0], ...patch }, trade23.legs[1]] });
+
+test('leg rouble rate — the trade rate unless the leg states its own', () => {
+  near(calc.legRateRub(trade23.legs[0], 84.2), 84.2);          // dollar leg, nothing stated
+  near(calc.legRateRub({ priceCcy: 'RUB' }, 84.2), 1);         // rouble-priced: a point is a rouble
+  near(calc.legRateRub({ rateRub: 110.89 }, 84.2), 110.89);    // the leg wins over the trade
+  near(calc.legRateRub({ priceCcy: 'RUB', rateRub: 10 }, 84.2), 10); // ... on a rouble leg too
+  near(calc.legRateRub({ rateRub: '' }, 84.2), 84.2);          // blank is not a rate
+  near(calc.legRateRub({ rateRub: 0 }, 84.2), 84.2);
+});
+
+test('leg gross in roubles — by the price step value, not the trade rate', () => {
+  near(calc.legGrossRub(moexLeg({ rateRub: 110.89 }).legs[0], 84.2), 15788.5, 0.5);
+  near(calc.legGrossRub(trade23.legs[0], 84.2), 11988.4, 0.5);  // unchanged without the field
+});
+
+test('leg gross in roubles — the broker figure replaces the calculation', () => {
+  const t = moexLeg({ pnlFactRub: 15788.4 });
+  near(calc.legGrossRub(t.legs[0], 84.2), 15788.4);
+  near(calc.legGrossCalcRub(t.legs[0], 84.2), 11988.4, 0.5);    // what the model says, kept for the delta
+  near(calc.legFactDeviation(t.legs[0], 84.2), 0.3170, 1e-3);   // +31,7% against the model
+  assert.strictEqual(calc.legFactDeviation(trade23.legs[0], 84.2), null); // no fact, no deviation
+});
+
+test('a fact on an unclosed leg is not money yet', () => {
+  const open = moexLeg({ exitPrice: null, pnlFactRub: 15788.4 });
+  assert.strictEqual(calc.legGrossRub(open.legs[0], 84.2), null);
+  assert.strictEqual(calc.pnlRub(open), null);
+});
+
+test('trade totals follow the leg rate — roubles first, dollars derived', () => {
+  const t = moexLeg({ rateRub: 110.89 });
+  near(calc.pnlRub(t), 3833.4, 1);            // 15 788,5 − 11 670,1 − 285
+  near(calc.pnlNet(t), 45.53, 0.02);          // the dollar figure is pnlRub / rate
+  near(calc.legGrossRub(t.legs[0], t.usdRub) / t.usdRub, 187.5, 0.1); // the leg reads $187,5
+  near(calc.pnlRub(trade23), 33.3, 0.5);      // the old trade, untouched
+});
+
+test('the rouble rate moves money, not volume — position stays on the trade rate', () => {
+  const t = moexLeg({ rateRub: 110.89 });
+  near(calc.positionStartRub(t), calc.positionStartRub(trade23), 0.01);
+  near(calc.positionEndRub(t), calc.positionEndRub(trade23), 0.01);
+  near(calc.positionStartAvgRub(t), calc.positionStartAvgRub(trade23), 0.01);
+});
+
+test('payout estimate is taken from the roubles the exchange credited', () => {
+  near(calc.estimatePayout(trade23, 0.06), -719.3, 0.5);                       // as before
+  near(calc.estimatePayout(moexLeg({ rateRub: 110.89 }), 0.06), -947.3, 0.5);  // 6% of 15 788,5
+  near(calc.estimatePayout(moexLeg({ pnlFactRub: 15788.4 }), 0.06), -947.3, 0.5);
+});
+
+test('payout estimate on a losing MOEX leg rebates the other legs, in roubles', () => {
+  // MOEX loses, FOREX earns: the rebate is 6% of what has to be moved back
+  const t = {
+    ...trade23,
+    legs: [
+      { ...trade23.legs[0], exitPrice: 4437.2, rateRub: 110.89 },  // short, price up -> loss
+      { ...trade23.legs[1], exitPrice: 4361.95 },                  // long, price up -> +$200
+    ],
+  };
+  near(calc.estimatePayout(t, 0.06), 0.06 * 200 * 84.2, 1);
+});
+
+test('computeTrade carries the rouble side of every leg', () => {
+  const c23 = calc.computeTrade(moexLeg({ rateRub: 110.89, pnlFactRub: 15788.4 }));
+  near(c23.legs[0].rateRub, 110.89);
+  near(c23.legs[0].grossRub, 15788.4);
+  near(c23.legs[0].grossCalcRub, 15788.5, 0.5);
+  near(c23.legs[0].factRub, 15788.4);
+  near(c23.legs[0].factDeviation, 0.0, 1e-3);   // the rate now agrees with the fact
+  assert.strictEqual(calc.computeTrade(trade23).legs[0].factRub, null);
+});
+
+test('the rate implied by a broker figure — what the calibration button computes', () => {
+  near(calc.impliedLegRate(trade23.legs[0], 15788.4), 110.89, 0.01);
+  assert.strictEqual(calc.impliedLegRate(trade23.legs[0], null), null);
+  assert.strictEqual(calc.impliedLegRate({ ...trade23.legs[0], exitPrice: null }, 15788.4), null);
+  assert.strictEqual(calc.impliedLegRate({ ...trade23.legs[0], exitPrice: 4427.2 }, 15788.4), null); // no move, no rate
+});
+
+// The journal prints a leg's money in the currency it quotes in, so the rouble
+// figure has to read back through the trade rate — otherwise a calibrated MOEX
+// leg would still show the dollar price move.
+test('computeTrade — a leg reports the money it made, not the price move', () => {
+  const c23 = calc.computeTrade(moexLeg({ pnlFactRub: 15788.4 }));
+  near(c23.legs[0].grossMoney, 187.51, 0.01);            // dollar leg: roubles / trade rate
+  near(c23.legs[1].grossMoney, -138.6, 0.01);            // untouched leg reads as before
+  near(calc.computeTrade(trade23).legs[0].grossMoney, 142.38, 0.01);
+  const rubLeg = calc.computeTrade({ usdRub: 84.2, legs: [
+    { priceCcy: 'RUB', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 0 },
+    trade23.legs[1],
+  ] });
+  near(rubLeg.legs[0].grossMoney, 100);                  // rouble leg reads roubles
+});

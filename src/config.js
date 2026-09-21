@@ -12,6 +12,9 @@ const DEFAULTS = {
   // whatever the trades already hold, so dropping a value from the dictionary
   // alone would not remove it — the trades would keep handing it back.
   hidden: { exchanges: [], tags: [], types: [], tickers: [] },
+  // Roubles per one point of price, per ticker. It belongs to the contract, not
+  // to a single trade: calibrate GOLD once and the next GOLD trade opens with it.
+  pointValues: {},
 };
 
 const KINDS = ['exchanges', 'tags', 'types', 'tickers'];
@@ -33,7 +36,11 @@ function createConfig({ dataDir }) {
     } catch {
       saved = {};
     }
-    return { ...DEFAULTS, ...saved, hidden: { ...emptyHidden(), ...(saved.hidden || {}) } };
+    return {
+      ...DEFAULTS, ...saved,
+      hidden: { ...emptyHidden(), ...(saved.hidden || {}) },
+      pointValues: { ...(saved.pointValues || {}) },
+    };
   }
 
   function write(data) {
@@ -67,6 +74,25 @@ function createConfig({ dataDir }) {
     write(data);
   }
 
+  const tickerKey = (ticker) => String(ticker || '').trim().toUpperCase();
+
+  function getPointValue(ticker) {
+    const v = Number(read().pointValues[tickerKey(ticker)]);
+    return v > 0 ? v : null;
+  }
+
+  // A value of zero, an empty field or nothing at all all mean "not calibrated",
+  // so clearing the form's field is how a wrong calibration is taken back.
+  function setPointValue(ticker, value) {
+    const key = tickerKey(ticker);
+    if (!key) return;
+    const data = read();
+    const v = Number(value);
+    if (v > 0) data.pointValues[key] = v;
+    else delete data.pointValues[key];
+    write(data);
+  }
+
   function getSettings() {
     return { ...SETTINGS_DEFAULTS, ...(read().settings || {}) };
   }
@@ -86,13 +112,16 @@ function createConfig({ dataDir }) {
       if (Array.isArray(obj[k])) data[k] = obj[k];
       if (obj.hidden && Array.isArray(obj.hidden[k])) data.hidden[k] = obj.hidden[k];
     });
+    if (obj.pointValues && typeof obj.pointValues === 'object') {
+      data.pointValues = { ...obj.pointValues };
+    }
     if (obj.settings && typeof obj.settings === 'object') {
       data.settings = { ...SETTINGS_DEFAULTS, ...obj.settings };
     }
     write(data);
   }
 
-  return { get, addItem, removeItem, getSettings, setSettings, importAll };
+  return { get, addItem, removeItem, getPointValue, setPointValue, getSettings, setSettings, importAll };
 }
 
 module.exports = { createConfig };

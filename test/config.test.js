@@ -128,3 +128,34 @@ test('importAll carries the hidden lists', () => {
   cfg.importAll({ tags: ['Схождение'], hidden: { tags: ['Раскор'] } });
   assert.deepStrictEqual(createConfig({ dataDir: dir }).get().hidden.tags, ['Раскор']);
 });
+
+// ---------- roubles per point, remembered per instrument ----------
+//
+// The rouble value of a price point belongs to the contract, not to the trade:
+// once GOLD is calibrated, the next GOLD trade should open with it already in.
+test('point values are remembered per ticker', () => {
+  const dir = tmpDir();
+  const cfg = createConfig({ dataDir: dir });
+  assert.deepStrictEqual(cfg.get().pointValues, {});
+  cfg.setPointValue('GOLD', 110.89);
+  assert.strictEqual(createConfig({ dataDir: dir }).getPointValue('GOLD'), 110.89);
+  assert.strictEqual(cfg.getPointValue('gold'), 110.89, 'the ticker is matched case-insensitively');
+  assert.strictEqual(cfg.getPointValue('SILV'), null, 'an uncalibrated ticker has no value');
+});
+
+test('a point value can be revised and cleared', () => {
+  const cfg = createConfig({ dataDir: tmpDir() });
+  cfg.setPointValue('GOLD', 110.89);
+  cfg.setPointValue('GOLD', 84.2);
+  assert.strictEqual(cfg.getPointValue('GOLD'), 84.2);
+  cfg.setPointValue('GOLD', null);
+  assert.strictEqual(cfg.getPointValue('GOLD'), null);
+  cfg.setPointValue('GOLD', 0);
+  assert.strictEqual(cfg.getPointValue('GOLD'), null, 'zero roubles per point is not a calibration');
+});
+
+test('importAll carries the point values', () => {
+  const dir = tmpDir();
+  createConfig({ dataDir: dir }).importAll({ pointValues: { GOLD: 110.89 } });
+  assert.strictEqual(createConfig({ dataDir: dir }).getPointValue('GOLD'), 110.89);
+});

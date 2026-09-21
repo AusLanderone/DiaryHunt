@@ -82,3 +82,67 @@ test('fetchUsdRub — rejects with a readable message when both sources fail', a
     (err) => /курс/i.test(err.message),
   );
 });
+
+// ---------- price step value (roubles per point of price) ----------
+//
+// The FORTS securities feed carries MINSTEP and STEPPRICE for every contract:
+// the price step and what one step pays in roubles. Their ratio is the rouble
+// value of one point — the multiplier a dollar-quoted MOEX leg is paid by.
+const fortsFeed = JSON.stringify({
+  securities: {
+    columns: ['SECID', 'SHORTNAME', 'ASSETCODE', 'LASTTRADEDATE', 'MINSTEP', 'STEPPRICE'],
+    data: [
+      ['GDZ6', 'GOLD-12.26', 'GOLD', '2026-12-17', 0.1, 11.089],
+      ['GDU6', 'GOLD-9.26', 'GOLD', '2026-09-17', 0.1, 10.5],      // already expired
+      ['GDH7', 'GOLD-3.27', 'GOLD', '2027-03-18', 0.1, 11.2],      // further out
+      ['SVZ6', 'SILV-12.26', 'SILV', '2026-12-17', 0.01, 0.842],
+      ['BROKEN', 'X-12.26', 'XXX', '2026-12-17', 0, 0],
+    ],
+  },
+});
+
+test('parseStepPrice — the nearest live contract of the asset', () => {
+  const r = rates.parseStepPrice(fortsFeed, 'GOLD', '2026-09-21');
+  assert.strictEqual(r.secid, 'GDZ6');
+  assert.strictEqual(r.shortName, 'GOLD-12.26');
+  assert.ok(Math.abs(r.pointValue - 110.89) < 1e-6, `${r.pointValue}`);
+  assert.strictEqual(r.lastTradeDate, '2026-12-17');
+});
+
+test('parseStepPrice — a contract can be asked for by its own code', () => {
+  const r = rates.parseStepPrice(fortsFeed, 'gdh7', '2026-09-21');
+  assert.strictEqual(r.secid, 'GDH7');
+  assert.ok(Math.abs(r.pointValue - 112) < 1e-6);
+});
+
+test('parseStepPrice — a different step, a different point value', () => {
+  const r = rates.parseStepPrice(fortsFeed, 'SILV', '2026-09-21');
+  assert.ok(Math.abs(r.pointValue - 84.2) < 1e-6, `${r.pointValue}`);
+});
+
+test('parseStepPrice — nothing to report beats a wrong number', () => {
+  assert.strictEqual(rates.parseStepPrice(fortsFeed, 'XXX', '2026-09-21'), null); // no step value
+  assert.strictEqual(rates.parseStepPrice(fortsFeed, 'ED', '2026-09-21'), null);  // not listed
+  assert.strictEqual(rates.parseStepPrice('not json', 'GOLD', '2026-09-21'), null);
+  assert.strictEqual(rates.parseStepPrice(JSON.stringify({}), 'GOLD', '2026-09-21'), null);
+});
+
+test('parseStepPrice — when every contract has expired, the last one still answers', () => {
+  const r = rates.parseStepPrice(fortsFeed, 'GOLD', '2028-01-01');
+  assert.strictEqual(r.secid, 'GDH7');
+  assert.strictEqual(r.expired, true);
+});
+
+test('fetchPointValue — asks the FORTS feed and hands back the point value', async () => {
+  const seen = [];
+  const get = async (url) => { seen.push(url); return fortsFeed; };
+  const r = await rates.fetchPointValue({ get, code: 'GOLD', today: '2026-09-21' });
+  assert.ok(Math.abs(r.pointValue - 110.89) < 1e-6);
+  assert.match(seen[0], /forts\/securities\.json/);
+});
+
+test('fetchPointValue — an instrument MOEX does not list is an error, not a zero', async () => {
+  const get = async () => fortsFeed;
+  await assert.rejects(() => rates.fetchPointValue({ get, code: 'BTC', today: '2026-09-21' }),
+    /BTC/);
+});

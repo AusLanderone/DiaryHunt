@@ -407,8 +407,8 @@ test('leg gross in roubles — the broker figure replaces the calculation', () =
   const t = moexLeg({ pnlFactRub: 15788.4 });
   near(calc.legGrossRub(t.legs[0], 84.2), 15788.4);
   near(calc.legGrossCalcRub(t.legs[0], 84.2), 11988.4, 0.5);    // what the model says, kept for the delta
-  near(calc.legFactDeviation(t.legs[0], 84.2), 0.3170, 1e-3);   // +31,7% against the model
-  assert.strictEqual(calc.legFactDeviation(trade23.legs[0], 84.2), null); // no fact, no deviation
+  near(calc.legDeviation(t.legs[0], 84.2, t), 0.3170, 1e-3);   // +31,7% against the model
+  assert.strictEqual(calc.legDeviation(trade23.legs[0], 84.2, trade23), null); // nothing overrides, nothing to measure
 });
 
 test('a fact on an unclosed leg is not money yet', () => {
@@ -456,7 +456,7 @@ test('computeTrade carries the rouble side of every leg', () => {
   near(c23.legs[0].grossRub, 15788.4);
   near(c23.legs[0].grossCalcRub, 15788.5, 0.5);
   near(c23.legs[0].factRub, 15788.4);
-  near(c23.legs[0].factDeviation, 0.0, 1e-3);   // the rate now agrees with the fact
+  near(c23.legs[0].deviation, 0.0, 1e-3);   // the rate now agrees with the fact
   assert.strictEqual(calc.computeTrade(trade23).legs[0].factRub, null);
 });
 
@@ -480,4 +480,59 @@ test('computeTrade — a leg reports the money it made, not the price move', () 
     trade23.legs[1],
   ] });
   near(rubLeg.legs[0].grossMoney, 100);                  // rouble leg reads roubles
+});
+
+// ---------- where a leg's money comes from ----------
+//
+// Three sources, in order: the broker's own figure, the per-clearing variation
+// margin the app computes off MOEX history, and the model (₽ per point, or the
+// trade's rate). Each one is a better answer than the next.
+const vmMeta = (leg, t) => ({ secid: 'GDU6', sessions: 3, fingerprint: {
+  entryPrice: leg.entryPrice, exitPrice: leg.exitPrice, units: leg.units, side: leg.side,
+  openDate: t.openDate || null, closeDate: t.closeDate || null,
+} });
+const withVm = (patch, rub = 15700) => {
+  const t = { ...trade23, openDate: '2026-09-21' };
+  const leg = { ...t.legs[0], ...patch };
+  return { ...t, legs: [{ ...leg, vmRub: rub, vmMeta: vmMeta(leg, t) }, t.legs[1]] };
+};
+
+test('the clearing figure is the leg money when no broker figure is given', () => {
+  const t = withVm({});
+  near(calc.legGrossRub(t.legs[0], 84.2, t), 15700);
+  assert.strictEqual(calc.legMoneySource(t.legs[0], t), 'clearing');
+  near(calc.legDeviation(t.legs[0], 84.2, t), 15700 / 11988.4 - 1, 1e-4);
+});
+
+test('a broker figure outranks the clearing figure', () => {
+  const t = withVm({ pnlFactRub: 15788.4 });
+  near(calc.legGrossRub(t.legs[0], 84.2, t), 15788.4);
+  assert.strictEqual(calc.legMoneySource(t.legs[0], t), 'fact');
+});
+
+test('a clearing figure whose inputs moved is dropped, not silently believed', () => {
+  const t = withVm({});
+  const moved = { ...t, legs: [{ ...t.legs[0], units: 20 }, t.legs[1]] };
+  assert.strictEqual(calc.legVmStale(moved.legs[0], moved), true);
+  near(calc.legGrossRub(moved.legs[0], 84.2, moved), 4420.42 <= 4427.2 ? 6.78 * 20 * 84.2 : 0, 1);
+  assert.strictEqual(calc.legMoneySource(moved.legs[0], moved), 'trade');
+  const reDated = { ...t, closeDate: '2026-09-22' };
+  assert.strictEqual(calc.legVmStale(reDated.legs[0], reDated), true);
+});
+
+test('the money source is named even when nothing overrides the model', () => {
+  assert.strictEqual(calc.legMoneySource(trade23.legs[0], trade23), 'trade');
+  assert.strictEqual(calc.legMoneySource({ ...trade23.legs[0], rateRub: 110.89 }, trade23), 'rate');
+  assert.strictEqual(calc.legMoneySource({ priceCcy: 'RUB' }, trade23), 'trade');
+  assert.strictEqual(calc.legDeviation(trade23.legs[0], 84.2, trade23), null);
+});
+
+test('trade totals and payout follow the clearing figure too', () => {
+  const t = withVm({});
+  near(calc.pnlRub(t), 15700 - 11670.12 - 285, 1);
+  near(calc.estimatePayout(t, 0.06), -0.06 * 15700, 1);
+  const c = calc.computeTrade(t);
+  near(c.legs[0].vmRub, 15700);
+  assert.strictEqual(c.legs[0].vmStale, false);
+  assert.strictEqual(c.legs[0].source, 'clearing');
 });

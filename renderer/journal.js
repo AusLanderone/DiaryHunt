@@ -346,13 +346,22 @@ function tradeDetail(trade, c) {
     // own step value reads the roubles back through the trade rate
     const pnlCell = el('span', 'pnl ' + signCls(lc.grossMoney), lc.grossMoney == null ? '—'
       : (window.calc.legPriceCcy(leg) === 'RUB' ? rub0(lc.grossMoney) : F.fmtUsd(lc.grossMoney)));
-    if (lc.factRub !== null && lc.factRub !== undefined) {
-      pnlCell.classList.add('fact');
-      pnlCell.title = `факт ${rub0(lc.factRub)} · расчёт ${rub0(lc.grossCalcRub)}`
-        + (lc.factDeviation == null ? '' : ` · Δ ${(lc.factDeviation * 100).toFixed(1).replace('.', ',')} %`);
+    // where the money came from, said in one letter and spelled out on hover
+    if (lc.source === 'fact' || lc.source === 'clearing') {
+      pnlCell.classList.add(lc.source === 'fact' ? 'fact' : 'clearing');
+      const head = lc.source === 'fact'
+        ? `факт брокера ${rub0(lc.grossRub)}`
+        : `по клирингам ${rub0(lc.grossRub)}`
+          + (lc.vmMeta ? ` (${lc.vmMeta.secid || '?'}, ${lc.vmMeta.sessions || '?'} сессий)` : '');
+      pnlCell.title = `${head} · расчёт ${rub0(lc.grossCalcRub)}`
+        + (lc.deviation == null ? '' : ` · Δ ${(lc.deviation * 100).toFixed(1).replace('.', ',')} %`);
     } else if (lc.grossRub !== null && lc.rateRub && lc.priceCcy !== 'RUB'
       && Math.abs(lc.rateRub - (Number(trade.usdRub) || 0)) > 1e-9) {
       pnlCell.title = `1 пункт = ${lc.rateRub} ₽ · ${rub0(lc.grossRub)}`;
+    }
+    if (lc.vmStale) {
+      pnlCell.classList.add('stale');
+      pnlCell.title = 'Расчёт по клирингам устарел: цены, количество или даты сменились после него — пересчитайте в форме';
     }
     line.append(pnlCell);
     legs.append(line);
@@ -378,10 +387,13 @@ function tradeDetail(trade, c) {
   );
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
   // what the broker's figures added on top of the model, when any leg carries one
-  const factGap = c.legs.reduce((s2, lc) => (lc.factRub == null || lc.grossCalcRub == null
-    ? s2 : s2 + (lc.factRub - lc.grossCalcRub)), 0);
-  if (c.legs.some((lc) => lc.factRub != null)) {
-    meta.append(item('Факт − расчёт', rub0(factGap), signCls(factGap)));
+  const overridden = c.legs.filter((lc) => lc.source === 'fact' || lc.source === 'clearing');
+  const factGap = overridden.reduce((s2, lc) => (lc.grossRub == null || lc.grossCalcRub == null
+    ? s2 : s2 + (lc.grossRub - lc.grossCalcRub)), 0);
+  if (overridden.length) {
+    const label = overridden.every((lc) => lc.source === 'clearing')
+      ? 'Клиринги − расчёт' : 'Факт − расчёт';
+    meta.append(item(label, rub0(factGap), signCls(factGap)));
   }
   box.append(meta);
 

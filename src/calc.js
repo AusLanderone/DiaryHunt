@@ -127,12 +127,56 @@ function legRateRub(leg, usdRub) {
 }
 
 // The broker's own figure for the leg, in roubles. When it is there it IS the
-// money — the model is only an estimate of it.
-const hasFact = (leg) => leg.pnlFactRub !== null && leg.pnlFactRub !== undefined
-  && leg.pnlFactRub !== '' && !Number.isNaN(Number(leg.pnlFactRub));
+// money — everything else is an estimate of it.
+const filled = (v) => v !== null && v !== undefined && v !== '' && !Number.isNaN(Number(v));
 
 function legPnlFactRub(leg) {
-  return hasFact(leg) ? Number(leg.pnlFactRub) : null;
+  return filled(leg.pnlFactRub) ? Number(leg.pnlFactRub) : null;
+}
+
+// What a stored variation-margin figure was computed from. src/variationMargin.js
+// builds the same shape when it computes one; calc.js runs in the renderer as a
+// classic script and cannot require that module, so it carries its own copy —
+// test/variationMargin.test.js holds the two together.
+function vmFingerprint(leg, trade) {
+  const n = (v) => (filled(v) ? Number(v) : null);
+  const t = trade || {};
+  return {
+    entryPrice: n(leg.entryPrice), exitPrice: n(leg.exitPrice),
+    units: n(leg.units), side: leg.side || null,
+    openDate: t.openDate || null, closeDate: t.closeDate || null,
+  };
+}
+
+// A figure computed clearing by clearing describes the leg it was computed from.
+// Move a price, a size or a date and it is a number about a different trade, so
+// it is dropped rather than quietly believed.
+function legVmStale(leg, trade) {
+  const fp = leg.vmMeta && leg.vmMeta.fingerprint;
+  if (!fp) return false;
+  const now = vmFingerprint(leg, trade);
+  return Object.keys(now).some((k) => now[k] !== (fp[k] === undefined ? null : fp[k]));
+}
+
+// The roubles MOEX credited over the life of the position, summed session by
+// session at each day's rate — what «↻ по клирингам» computes and stores.
+function legVmRub(leg, trade) {
+  if (!filled(leg.vmRub)) return null;
+  return legVmStale(leg, trade) ? null : Number(leg.vmRub);
+}
+
+// The figure that stands in for the model, if any: the broker's first, the
+// per-clearing sum second.
+function legOverrideRub(leg, trade) {
+  const fact = legPnlFactRub(leg);
+  return fact === null ? legVmRub(leg, trade) : fact;
+}
+
+// Where a leg's money came from, for the line that says so in the UI.
+function legMoneySource(leg, trade) {
+  if (legPnlFactRub(leg) !== null) return 'fact';
+  if (legVmRub(leg, trade) !== null) return 'clearing';
+  return filled(leg.rateRub) && Number(leg.rateRub) > 0 ? 'rate' : 'trade';
 }
 
 // What the model says the leg earned, kept separate so the fact can be measured
@@ -142,19 +186,19 @@ function legGrossCalcRub(leg, usdRub) {
   return g === null ? null : g * legRateRub(leg, usdRub);
 }
 
-function legGrossRub(leg, usdRub) {
-  if (!hasExit(leg)) return null;   // a fact on an unclosed leg is not money yet
-  const fact = legPnlFactRub(leg);
-  return fact === null ? legGrossCalcRub(leg, usdRub) : fact;
+function legGrossRub(leg, usdRub, trade) {
+  if (!hasExit(leg)) return null;   // a figure on an unclosed leg is not money yet
+  const over = legOverrideRub(leg, trade);
+  return over === null ? legGrossCalcRub(leg, usdRub) : over;
 }
 
-// How far the fact stands from the model, as a fraction: +0,317 = the exchange
-// credited 31,7% more than the conversion by the trade's rate suggested.
-function legFactDeviation(leg, usdRub) {
-  const fact = legPnlFactRub(leg);
+// How far the figure that won stands from the model, as a fraction: +0,317 = the
+// exchange credited 31,7% more than the conversion by the trade's rate suggested.
+function legDeviation(leg, usdRub, trade) {
+  const over = legOverrideRub(leg, trade);
   const model = legGrossCalcRub(leg, usdRub);
-  if (fact === null || model === null || model === 0) return null;
-  return fact / model - 1;
+  if (over === null || model === null || model === 0) return null;
+  return over / model - 1;
 }
 
 // The rouble rate a broker figure implies for this leg — the calibration behind
@@ -200,7 +244,7 @@ function positionEndRub(trade) {
 function pnlRub(trade) {
   let sum = 0;
   for (const leg of trade.legs) {
-    const g = legGrossRub(leg, trade.usdRub);
+    const g = legGrossRub(leg, trade.usdRub, trade);
     if (g === null) return null;
     sum += g;
   }
@@ -259,12 +303,12 @@ function isClosed(trade) {
 function estimatePayout(trade, rate) {
   const moex = trade.legs.find((l) => l.exchange === 'MOEX');
   if (!moex) return null;
-  const g = legGrossRub(moex, trade.usdRub);
+  const g = legGrossRub(moex, trade.usdRub, trade);
   if (g === null) return null;
   if (g > 0) return -rate * g;
   const otherProfit = trade.legs
     .filter((l) => l !== moex)
-    .reduce((s, l) => { const lg = legGrossRub(l, trade.usdRub); return s + (lg && lg > 0 ? lg : 0); }, 0);
+    .reduce((s, l) => { const lg = legGrossRub(l, trade.usdRub, trade); return s + (lg && lg > 0 ? lg : 0); }, 0);
   return rate * otherProfit;
 }
 
@@ -275,7 +319,7 @@ function computeTrade(trade) {
       const end = legPositionEnd(leg);
       const k = legPriceMul(leg, trade.usdRub);
       const rateRub = legRateRub(leg, trade.usdRub);
-      const grossRub = legGrossRub(leg, trade.usdRub);
+      const grossRub = legGrossRub(leg, trade.usdRub, trade);
       return {
         start, end, gross: legGross(leg),
         // same figures in roubles, so a mixed-currency trade can be summed
@@ -289,7 +333,11 @@ function computeTrade(trade) {
         rateRub,
         grossCalcRub: legGrossCalcRub(leg, trade.usdRub),
         factRub: legPnlFactRub(leg),
-        factDeviation: legFactDeviation(leg, trade.usdRub),
+        vmRub: legVmRub(leg, trade),
+        vmStale: legVmStale(leg, trade),
+        vmMeta: leg.vmMeta || null,
+        source: legMoneySource(leg, trade),
+        deviation: legDeviation(leg, trade.usdRub, trade),
         swapRub: legSwapRub(leg, trade.usdRub),
         priceCcy: legPriceCcy(leg),
         role: legRole(leg, i),
@@ -320,7 +368,8 @@ const _api = {
   entrySpread, exitSpread, spreadTotal, spreadCollected, legRole, spreadFormula,
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
-  legRateRub, legPnlFactRub, legGrossCalcRub, legFactDeviation, impliedLegRate,
+  legRateRub, legPnlFactRub, legGrossCalcRub, legDeviation, impliedLegRate,
+  vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource,
   positionStartAvgRub, positionEndAvgRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,

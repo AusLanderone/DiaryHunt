@@ -1998,6 +1998,107 @@ try {
   check('an uncalibrated ticker does not clear what is already there',
     Math.abs(parseFloat(prefilled.afterOtherTicker) - 110.89) < 0.01, prefilled.afterOtherTicker);
 
+  // ---------------------------------------------------------------------
+  console.log('\n[12] variation margin, clearing by clearing');
+  // The figure MOEX history yields is stored on the leg with a fingerprint of
+  // what it was computed from. No network here: the stored shape is what the
+  // journal and the form have to read correctly.
+  const vmTrade = {
+    openDate: '2026-08-28', closeDate: '2026-09-17', type: 'Фьючи', ticker: 'GOLD', tag: 'Схождение',
+    usdRub: 85.43, payout: 0, adjustment: 0, comment: 'e2e clearing',
+    legs: [
+      { exchange: 'MOEX', side: 'Шорт', entryPrice: 4538, units: 21, exitPrice: 4326.4, feeRub: 550,
+        secid: 'GDU6', vmRub: 378316,
+        vmMeta: { secid: 'GDU6', sessions: 15, computedAt: '2026-09-21T10:00:00.000Z',
+          fingerprint: { entryPrice: 4538, exitPrice: 4326.4, units: 21, side: 'Шорт',
+            openDate: '2026-08-28', closeDate: '2026-09-17' } } },
+      { exchange: 'FOREX', side: 'Лонг', entryPrice: 4520.7, units: 20, exitPrice: 4319.89, feeRub: 60 },
+    ],
+  };
+  const vmAdded = await page.evaluate(async (t) => {
+    const saved = await window.api.trades.add(t);
+    const c = window.calc.computeTrade(saved);
+    return { num: saved.num, source: c.legs[0].source, stale: c.legs[0].vmStale,
+      grossRub: c.legs[0].grossRub, calcRub: c.legs[0].grossCalcRub, pnlRub: c.pnlRub };
+  }, vmTrade);
+  check('a stored clearing figure is the leg money',
+    vmAdded.source === 'clearing' && !vmAdded.stale && Math.abs(vmAdded.grossRub - 378316) < 1,
+    JSON.stringify(vmAdded));
+  check('and the model stays beside it (379 617 ₽ at the flat rate)',
+    Math.abs(vmAdded.calcRub - 379617) < 5, String(vmAdded.calcRub));
+
+  await page.evaluate(() => window.diary.refresh());
+  await page.waitForSelector('.trade-row', { timeout: 8000 });
+  await page.evaluate((num) => {
+    const row = [...document.querySelectorAll('.trade-row')]
+      .find((r) => r.innerText.trim().startsWith(String(num)));
+    if (row && !row.classList.contains('expanded')) row.click();
+  }, vmAdded.num);
+  await page.waitForSelector('.trade-detail', { timeout: 5000 });
+  const vmDetail = await page.evaluate(() => {
+    const detail = [...document.querySelectorAll('.trade-detail')]
+      .find((d) => d.textContent.includes('e2e clearing'));
+    const cell = detail.querySelector('.detail-leg:not(.head) .pnl');
+    return { cls: cell.className, title: cell.title, meta: detail.querySelector('.detail-meta').innerText };
+  });
+  check('the journal marks the leg as computed from the exchange history',
+    /clearing/.test(vmDetail.cls) && /по клирингам/.test(vmDetail.title), JSON.stringify(vmDetail.cls));
+  check('the tooltip names the contract and the session count',
+    /GDU6/.test(vmDetail.title) && /15 сессий/.test(vmDetail.title), vmDetail.title);
+  check('the detail carries «Клиринги − расчёт»',
+    /КЛИРИНГИ − РАСЧЁТ/i.test(vmDetail.meta.replace(/\s+/g, ' ')), vmDetail.meta);
+  await page.screenshot({ path: path.join(SHOT, '12-clearing.png') });
+
+  // move a price and the stored figure stops describing this trade
+  const staleRes = await page.evaluate(async () => {
+    const trades = await window.api.trades.list();
+    const t = trades.find((x) => x.comment === 'e2e clearing');
+    const legs = t.legs.map((l, i) => (i ? l : { ...l, units: 20 }));
+    const saved = await window.api.trades.update(t.id, { legs });
+    const c = window.calc.computeTrade(saved);
+    return { stale: c.legs[0].vmStale, source: c.legs[0].source, gross: c.legs[0].grossRub };
+  });
+  check('changing the size makes the stored figure stale',
+    staleRes.stale === true && staleRes.source === 'trade', JSON.stringify(staleRes));
+  check('and a stale figure is dropped rather than believed',
+    Math.abs(staleRes.gross - (4538 - 4326.4) * 20 * 85.43) < 5, String(staleRes.gross));
+
+  const staleUi = await page.evaluate(async () => {
+    window.diary.refresh();
+    await new Promise((r) => setTimeout(r, 200));
+    const detail = [...document.querySelectorAll('.trade-detail')]
+      .find((d) => d.textContent.includes('e2e clearing'));
+    const cell = detail && detail.querySelector('.detail-leg:not(.head) .pnl');
+    return cell ? { cls: cell.className, title: cell.title } : { missing: true };
+  });
+  check('the journal flags it instead of showing a number from another trade',
+    /stale/.test(staleUi.cls || ''), JSON.stringify(staleUi));
+
+  // the settings offer the switch and the bulk pass
+  await page.evaluate(() => document.querySelector('#btn-settings').click());
+  await page.waitForSelector('.modal', { timeout: 8000 });
+  const clrUi = await page.evaluate(() => {
+    const heads = [...document.querySelectorAll('.section-head')].map((h) => h.textContent);
+    const toggle = [...document.querySelectorAll('.modal label')].find((l) => /по клирингам/i.test(l.textContent));
+    const btns = [...document.querySelectorAll('.modal .btn')].map((b) => b.textContent);
+    return { heads, hasToggle: !!toggle, btns };
+  });
+  check('settings offer the clearing section', clrUi.heads.some((h) => /клиринг/i.test(h)), JSON.stringify(clrUi.heads));
+  check('with the automatic switch', clrUi.hasToggle, String(clrUi.hasToggle));
+  check('and a bulk recompute plus a cache reset',
+    clrUi.btns.some((b) => /Пересчитать все/.test(b)) && clrUi.btns.some((b) => /кэш/i.test(b)),
+    JSON.stringify(clrUi.btns));
+  const savedToggle = await page.evaluate(async () => {
+    const cb = [...document.querySelectorAll('.modal label')]
+      .find((l) => /по клирингам/i.test(l.textContent)).querySelector('input');
+    cb.checked = true;
+    cb.dispatchEvent(new Event('change', { bubbles: true }));
+    await new Promise((r) => setTimeout(r, 150));
+    return (await window.api.config.getSettings()).clearingAuto;
+  });
+  check('the switch is remembered', savedToggle === true, String(savedToggle));
+  await page.evaluate(() => document.querySelector('.modal-backdrop').remove());
+
 
 } catch (err) {
   failures++;

@@ -73,6 +73,18 @@ function legInputs(title, leg, defaultEx, index, ctx) {
     el('div', { class: 'field-row' }, [fact, calBtn]),
   ]);
 
+  // The variation margin MOEX actually credited, summed clearing by clearing off
+  // its own history. Nothing to type: the contract is found by the ticker and
+  // the price filled, the rates are the CBR ones of each day.
+  let vmRub = leg.vmRub ?? null;
+  let vmMeta = leg.vmMeta || null;
+  const secid = el('input', { type: 'text', class: 'leg-secid',
+    value: leg.secid || (leg.vmMeta && leg.vmMeta.secid) || '', placeholder: 'контракт авто', autocomplete: 'off' });
+  secid.title = 'Код контракта на MOEX (GDU6, SVZ6…). Пусто — определяется по тикеру и цене входа';
+  const vmBtn = el('button', { type: 'button', class: 'btn mini' }, [txt('↻ по клирингам')]);
+  vmBtn.title = 'Посчитать вариационную маржу по сессиям: расчётные цены MOEX × курс ЦБ каждого дня';
+  const legActions = el('div', { class: 'leg-actions' }, [vmBtn, secid]);
+
   const srcNote = el('div', { class: 'leg-note' });   // where a fetched number came from
   const note = el('div', { class: 'leg-note' });      // what the leg currently computes
 
@@ -94,7 +106,7 @@ function legInputs(title, leg, defaultEx, index, ctx) {
       field('Цена выход', exit), field('Комиссия ₽', fee),
       swapLabel, rateField, factField,
     ]),
-    srcNote, note,
+    legActions, srcNote, note,
   ]);
 
   const read = () => ({
@@ -108,6 +120,8 @@ function legInputs(title, leg, defaultEx, index, ctx) {
     priceCcy: ccy.value,
     rateRub: rateRub.value === '' ? null : Number(rateRub.value),
     pnlFactRub: fact.value === '' ? null : Number(fact.value),
+    secid: secid.value.trim().toUpperCase() || null,
+    vmRub, vmMeta,
   });
 
   const applyRate = (value) => {
@@ -143,6 +157,36 @@ function legInputs(title, leg, defaultEx, index, ctx) {
     }
   });
 
+  vmBtn.addEventListener('click', async () => {
+    const meta = ctx && ctx.trade ? ctx.trade() : null;
+    if (!meta || !meta.ticker || !meta.openDate || !meta.closeDate) {
+      srcNote.className = 'leg-note err';
+      srcNote.textContent = 'нужны тикер и обе даты — по открытой сделке вариационка ещё идёт';
+      return;
+    }
+    vmBtn.disabled = true;
+    srcNote.className = 'leg-note';
+    srcNote.textContent = 'считаю по клирингам…';
+    try {
+      const r = await window.api.market.legMargin({ trade: meta, leg: read(), secid: secid.value.trim() || undefined });
+      if (!r.ok) {
+        srcNote.className = 'leg-note err';
+        srcNote.textContent = r.error || 'не вышло посчитать';
+        return;
+      }
+      vmRub = r.rub;
+      vmMeta = { secid: r.secid, sessions: r.sessions, fingerprint: r.fingerprint, computedAt: r.computedAt };
+      secid.value = r.secid;
+      srcNote.textContent = `${r.secid} · ${r.sessions} сессий · курс ЦБ по дням`;
+      if (ctx && ctx.recompute) ctx.recompute();
+    } catch (err) {
+      srcNote.className = 'leg-note err';
+      srcNote.textContent = String(err.message || err);
+    } finally {
+      vmBtn.disabled = false;
+    }
+  });
+
   calBtn.addEventListener('click', () => {
     const implied = window.calc.impliedLegRate(read(), fact.value === '' ? null : Number(fact.value));
     if (implied === null) {
@@ -157,19 +201,28 @@ function legInputs(title, leg, defaultEx, index, ctx) {
 
   // The line under the leg says what it currently earns and, when a broker
   // figure is in, how far the model stands from it.
+  const SOURCE = { fact: 'факт брокера', clearing: 'по клирингам', rate: 'по ₽ за пункт', trade: 'по курсу сделки' };
   const setNote = (lc) => {
     note.className = 'leg-note';
     if (!lc) { note.textContent = ''; return; }
     const parts = [];
-    if (lc.rateRub) parts.push(`1 пункт = ${(Math.round(lc.rateRub * 1e4) / 1e4).toLocaleString('ru-RU')} ₽`);
+    if (lc.source) parts.push(SOURCE[lc.source] || lc.source);
+    if (lc.source === 'clearing' && lc.vmMeta) {
+      parts.push(`${lc.vmMeta.secid || '?'} · ${lc.vmMeta.sessions || '?'} сессий`);
+    }
+    if (lc.rateRub && lc.source === 'rate') {
+      parts.push(`1 пункт = ${(Math.round(lc.rateRub * 1e4) / 1e4).toLocaleString('ru-RU')} ₽`);
+    }
     if (lc.grossRub !== null && lc.grossRub !== undefined) parts.push(`нога ${rub0(lc.grossRub)}`);
-    if (lc.factRub !== null && lc.factRub !== undefined && lc.grossCalcRub !== null) {
+    if (lc.deviation !== null && lc.deviation !== undefined && lc.grossCalcRub !== null) {
       parts.push(`расчёт ${rub0(lc.grossCalcRub)}`);
-      if (lc.factDeviation !== null && lc.factDeviation !== undefined) {
-        const d = lc.factDeviation * 100;
-        parts.push(`Δ ${d > 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')} %`);
-        if (Math.abs(d) >= 1) note.className = 'leg-note warn';
-      }
+      const d = lc.deviation * 100;
+      parts.push(`Δ ${d > 0 ? '+' : ''}${d.toFixed(1).replace('.', ',')} %`);
+      if (Math.abs(d) >= 1) note.className = 'leg-note warn';
+    }
+    if (lc.vmStale) {
+      note.className = 'leg-note err';
+      parts.push('расчёт по клирингам устарел — пересчитайте');
     }
     note.textContent = parts.join(' · ');
   };
@@ -189,6 +242,7 @@ function legInputs(title, leg, defaultEx, index, ctx) {
 async function openForm(trade, onSaved) {
   const F = window.format;
   const cfg = await window.api.config.get();
+  const settings = await window.api.config.getSettings();
   const all = await window.api.trades.list();
   const last = all.length ? [...all].sort((a, b) => b.num - a.num)[0] : null;
   const today = new Date().toISOString().slice(0, 10);
@@ -258,7 +312,12 @@ async function openForm(trade, onSaved) {
   let legFields = [];
 
   const defaultExchange = (i) => cfg.exchanges[i] || cfg.exchanges[0] || '';
-  const legCtx = { ticker: () => ticker.value.trim(), prefill: () => prefillPointValues() };
+  const legCtx = {
+    ticker: () => ticker.value.trim(),
+    trade: () => ({ ticker: ticker.value.trim(), openDate: openDate.value, closeDate: closeDate.value }),
+    recompute: () => recompute(),
+    prefill: () => prefillPointValues(),
+  };
 
   // An instrument calibrated once opens its next trade already calibrated.
   function prefillPointValues() {
@@ -405,6 +464,21 @@ async function openForm(trade, onSaved) {
     if (tickerValue && !(cfg.tickers || []).includes(tickerValue)) await window.api.config.addItem('tickers', tickerValue);
     if (tagValue && !cfg.tags.includes(tagValue)) await window.api.config.addItem('tags', tagValue);
     if (typeValue && !cfg.types.includes(typeValue)) await window.api.config.addItem('types', typeValue);
+    // with the setting on, a closed MOEX leg gets its clearing-by-clearing figure
+    // without anyone pressing anything
+    if (settings.clearingAuto && closeDate.value) {
+      const meta = { ticker: tickerValue, openDate: openDate.value, closeDate: closeDate.value };
+      for (const l of legValues) {
+        if (!window.calc.isRubLeg(l) || l.exitPrice === null || l.exitPrice === undefined) continue;
+        if (window.calc.legPnlFactRub(l) !== null) continue;      // a broker figure wins anyway
+        if (window.calc.legVmRub(l, meta) !== null) continue;     // still fresh
+        const r = await window.api.market.legMargin({ trade: meta, leg: l, secid: l.secid || undefined });
+        if (!r.ok) continue;                                      // silence here, the button reports
+        l.vmRub = r.rub;
+        l.secid = r.secid;
+        l.vmMeta = { secid: r.secid, sessions: r.sessions, fingerprint: r.fingerprint, computedAt: r.computedAt };
+      }
+    }
     // the rouble value of a point belongs to the instrument, not to this trade
     const calibrated = legValues.find((l) => window.calc.isRubLeg(l) && Number(l.rateRub) > 0);
     if (tickerValue && calibrated) await window.api.config.setPointValue(tickerValue, calibrated.rateRub);

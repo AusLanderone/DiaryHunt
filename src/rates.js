@@ -93,6 +93,85 @@ async function fetchPointValue({ get, code, today }) {
   return { ...found, source: 'MOEX ISS' };
 }
 
+// ---------- history: what a position was marked at, and at what rate ----------
+//
+// MOEX credits a dollar-quoted future in roubles at every clearing, valuing a
+// point by the day's official rate. To reproduce that the diary needs two
+// series: the contract's settlement price day by day, and the CBR rate day by
+// day — the rate the exchange's price step value turns out to equal exactly.
+
+const HISTORY = 'https://iss.moex.com/iss/history/engines/futures/markets/forts/securities';
+const CBR_SERIES = 'https://www.cbr.ru/scripts/XML_dynamic.asp';
+
+const settlesUrl = (secid, from, till, start) => `${HISTORY}/${encodeURIComponent(secid)}.json`
+  + `?iss.meta=off&from=${from}&till=${till}&start=${start}`
+  + '&history.columns=TRADEDATE,SECID,SETTLEPRICE';
+
+const contractsUrl = (assetCode, date) => `${HISTORY}.json`
+  + `?iss.meta=off&iss.only=history&date=${date}&assetcode=${encodeURIComponent(assetCode)}`
+  + '&history.columns=SECID,ASSETCODE,SETTLEPRICE';
+
+// dd/mm/yyyy is the only shape the CBR endpoint accepts
+const ru = (iso) => String(iso).split('-').reverse().join('/');
+const cbrSeriesUrl = (from, till) => `${CBR_SERIES}?date_req1=${ru(from)}&date_req2=${ru(till)}&VAL_NM_RQ=R01235`;
+
+function historyRows(text) {
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const h = json && json.history;
+  if (!h || !Array.isArray(h.data) || !Array.isArray(h.columns)) return null;
+  const idx = Object.fromEntries(h.columns.map((c, i) => [c, i]));
+  return { rows: h.data, idx };
+}
+
+function parseSettles(text) {
+  const h = historyRows(text);
+  if (!h) return [];
+  return h.rows
+    .map((r) => ({ date: r[h.idx.TRADEDATE], settle: Number(r[h.idx.SETTLEPRICE]) }))
+    .filter((r) => r.date && r.settle > 0);
+}
+
+// The feed also carries calendar spreads (GDU6GDZ6), which have no asset code
+// and no price of their own — they are not contracts a trade can be in.
+function parseContracts(text) {
+  const h = historyRows(text);
+  if (!h) return [];
+  return h.rows
+    .map((r) => ({ secid: String(r[h.idx.SECID] || ''), assetCode: String(r[h.idx.ASSETCODE] || ''), settle: Number(r[h.idx.SETTLEPRICE]) }))
+    .filter((r) => r.secid && r.assetCode && r.settle > 0);
+}
+
+function parseCbrSeries(text) {
+  return [...String(text).matchAll(/Date="([\d.]+)"[\s\S]*?<Value>([\d,.]+)<\/Value>/g)]
+    .map((m) => ({ date: m[1].split('.').reverse().join('-'), rate: Number(m[2].replace(',', '.')) }))
+    .filter((r) => r.rate > 0);
+}
+
+// ISS hands out 100 rows at a time; a position held over a long stretch needs
+// the next pages too.
+async function fetchSettles({ get, secid, from, till }) {
+  const out = [];
+  for (let start = 0; ; start += 100) {
+    const page = parseSettles(await get(settlesUrl(secid, from, till, start)));
+    out.push(...page);
+    if (page.length < 100) break;
+  }
+  return out;
+}
+
+async function fetchContracts({ get, assetCode, date }) {
+  return parseContracts(await get(contractsUrl(assetCode, date)));
+}
+
+async function fetchCbrSeries({ get, from, till }) {
+  return parseCbrSeries(await get(cbrSeriesUrl(from, till)));
+}
+
 async function fetchUsdRub({ get }) {
   try {
     const moex = parseMoex(await get(MOEX_URL));
@@ -110,4 +189,5 @@ async function fetchUsdRub({ get }) {
 }
 
 module.exports = { parseMoex, parseCbr, parseStepPrice, fetchUsdRub, fetchPointValue,
-  MOEX_URL, CBR_URL, FORTS_URL };
+  parseSettles, parseContracts, parseCbrSeries, fetchSettles, fetchContracts, fetchCbrSeries,
+  MOEX_URL, CBR_URL, FORTS_URL, HISTORY, CBR_SERIES };

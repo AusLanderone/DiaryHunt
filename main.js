@@ -9,8 +9,10 @@ const { tradesToCsv } = require('./src/export');
 const backup = require('./src/backup');
 const cloudSync = require('./src/cloudSync');
 const cloudLink = require('./src/cloudLink');
+const { createMarketCache } = require('./src/marketCache');
+const { computeLegMargin } = require('./src/legMargin');
 
-let store, balanceStore, config;
+let store, balanceStore, config, marketCache;
 let win = null;
 let pushTimer = null;
 
@@ -19,6 +21,7 @@ function initData() {
   store = createStore({ dataDir });
   balanceStore = createBalanceStore({ dataDir });
   config = createConfig({ dataDir });
+  marketCache = createMarketCache({ dataDir });
 }
 
 // ---------- cloud sync through a folder the cloud client keeps in step ----------
@@ -216,6 +219,26 @@ function registerIpc() {
     } catch (err) {
       return { ok: false, error: err.message };
     }
+  });
+  // Variation margin of a MOEX leg, summed clearing by clearing off ISS history
+  // and the CBR rate of each day. Past sessions are cached on disk, so the same
+  // trade is fetched once and a bulk recompute mostly reads from the cache.
+  ipcMain.handle('market:legMargin', async (_e, payload) => {
+    try {
+      const out = await computeLegMargin({
+        get: httpGet,
+        cache: marketCache,
+        today: new Date().toISOString().slice(0, 10),
+        trade: payload.trade, leg: payload.leg, secid: payload.secid,
+      });
+      return { ok: true, ...out };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  ipcMain.handle('market:clearCache', () => {
+    marketCache.clear();
+    return { ok: true };
   });
   ipcMain.handle('export:csv', async () => {
     const { canceled, filePath } = await dialog.showSaveDialog({

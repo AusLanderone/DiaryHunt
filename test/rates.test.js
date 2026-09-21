@@ -146,3 +146,71 @@ test('fetchPointValue — an instrument MOEX does not list is an error, not a ze
   await assert.rejects(() => rates.fetchPointValue({ get, code: 'BTC', today: '2026-09-21' }),
     /BTC/);
 });
+
+// ---------- history: settlement prices and the daily official rate ----------
+const histPage = (rows, total) => JSON.stringify({
+  history: { columns: ['TRADEDATE', 'SECID', 'SETTLEPRICE'], data: rows },
+  'history.cursor': { columns: ['INDEX', 'TOTAL', 'PAGESIZE'], data: [[0, total, 100]] },
+});
+
+test('parseSettles — the settlement price of each day, in order', () => {
+  const rows = parse => parse;
+  const text = histPage([
+    ['2026-08-28', 'GDU6', 4531],
+    ['2026-08-31', 'GDU6', 4500],
+    ['2026-09-01', 'GDU6', null],   // a day with no clearing price is not a zero
+  ], 3);
+  assert.deepStrictEqual(rates.parseSettles(text), [
+    { date: '2026-08-28', settle: 4531 },
+    { date: '2026-08-31', settle: 4500 },
+  ]);
+  assert.deepStrictEqual(rates.parseSettles('not json'), []);
+});
+
+test('parseContracts — every contract of a series traded that day', () => {
+  const text = JSON.stringify({
+    history: {
+      columns: ['SECID', 'ASSETCODE', 'SETTLEPRICE'],
+      data: [['GDU6', 'GOLD', 4531], ['GDZ6', 'GOLD', 4570.2], ['GDU6GDZ6', '', 0]],
+    },
+  });
+  assert.deepStrictEqual(rates.parseContracts(text), [
+    { secid: 'GDU6', assetCode: 'GOLD', settle: 4531 },
+    { secid: 'GDZ6', assetCode: 'GOLD', settle: 4570.2 },
+  ]);
+});
+
+test('parseCbrSeries — the official rate day by day', () => {
+  const xml = `<?xml version="1.0"?><ValCurs ID="R01235">
+    <Record Date="28.08.2026" Id="R01235"><Nominal>1</Nominal><Value>80,1234</Value></Record>
+    <Record Date="31.08.2026" Id="R01235"><Nominal>1</Nominal><Value>81,5000</Value></Record>
+  </ValCurs>`;
+  assert.deepStrictEqual(rates.parseCbrSeries(xml), [
+    { date: '2026-08-28', rate: 80.1234 },
+    { date: '2026-08-31', rate: 81.5 },
+  ]);
+  assert.deepStrictEqual(rates.parseCbrSeries('<ValCurs/>'), []);
+});
+
+test('fetchSettles — pages through the feed until the series ends', async () => {
+  const seen = [];
+  const page1 = histPage(Array.from({ length: 100 }, (_, i) => [`2026-05-${String(i % 28 + 1).padStart(2, '0')}`, 'GDU6', 4000 + i]), 150);
+  const page2 = histPage([['2026-09-01', 'GDU6', 4100]], 150);
+  const get = async (url) => { seen.push(url); return seen.length === 1 ? page1 : page2; };
+  const out = await rates.fetchSettles({ get, secid: 'GDU6', from: '2026-05-01', till: '2026-09-01' });
+  assert.strictEqual(out.length, 101);
+  assert.strictEqual(seen.length, 2);
+  assert.match(seen[1], /start=100/);
+});
+
+test('fetchContracts — asks for one asset code on one day', async () => {
+  const seen = [];
+  const get = async (url) => {
+    seen.push(url);
+    return JSON.stringify({ history: { columns: ['SECID', 'ASSETCODE', 'SETTLEPRICE'], data: [['GDU6', 'GOLD', 4531]] } });
+  };
+  const out = await rates.fetchContracts({ get, assetCode: 'GOLD', date: '2026-08-28' });
+  assert.deepStrictEqual(out, [{ secid: 'GDU6', assetCode: 'GOLD', settle: 4531 }]);
+  assert.match(seen[0], /assetcode=GOLD/);
+  assert.match(seen[0], /date=2026-08-28/);
+});

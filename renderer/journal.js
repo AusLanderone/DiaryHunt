@@ -281,28 +281,8 @@ function tradeRow(trade, c) {
   row.append(ret);
 
   const money = el('div', 'jc money');
-  if (closed) {
-    money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));
-  } else {
-    money.append(pill('открыта', 'open'));
-    // what MOEX has already credited on the open leg — one side of the trade,
-    // said as such, because the other side has no price until it is closed
-    const accrued = c.legs.reduce((s2, lc) => (lc.interimRub === null ? s2 : s2 + lc.interimRub), null);
-    const through = (c.legs.find((lc) => lc.interimRub !== null) || {}).interimThrough;
-    if (accrued !== null) {
-      const live = (c.legs.find((lc) => lc.interimRub !== null) || {}).interimLive;
-      // the column is 116px wide: the venue and the money fit, the timestamp lives
-      // in the tooltip rather than wrapping the line into three
-      const note = el('span', 'accrued ' + signCls(accrued),
-        `MOEX ${accrued > 0 ? '+' : ''}${Math.round(accrued).toLocaleString('ru-RU')} ₽`);
-      note.title = (live
-        ? `Начислено по клирингам плюс движение до последней цены биржи ${live.price} в ${live.time}.`
-          + '\nБесплатные котировки MOEX отстают примерно на 15 минут.'
-        : `Вариационная маржа, начисленная биржей по ноге MOEX${through ? ' на вечер ' + shortDate(through) : ''}.`)
-        + '\nЭто одна нога, а не результат сделки: вторая оценится, когда закроется.';
-      money.append(note);
-    }
-  }
+  if (closed) money.append(el('span', 'sum ' + signCls(profit), window.format.fmtRub(profit)));
+  else money.append(pill('открыта', 'open'));
   row.append(money);
 
   const act = el('div', 'jc actions');
@@ -417,15 +397,6 @@ function tradeDetail(trade, c) {
   );
   if (Number(trade.adjustment)) meta.append(item('Правка', rub0(Number(trade.adjustment))));
   // what the broker's figures added on top of the model, when any leg carries one
-  // an open trade shows what has already been credited on the MOEX leg
-  c.legs.forEach((lc, i) => {
-    if (lc.interimRub === null) return;
-    const label = `Начислено · ${trade.legs[i].exchange || 'MOEX'}`
-      + (lc.interimLive && lc.interimLive.time ? ` на ${lc.interimLive.time.slice(0, 5)}`
-        : lc.interimThrough ? ` на ${shortDate(lc.interimThrough)}` : '');
-    meta.append(item(label, rub0(lc.interimRub), signCls(lc.interimRub)));
-  });
-
   const overridden = c.legs.filter((lc) => lc.source === 'fact' || lc.source === 'clearing');
   const factGap = overridden.reduce((s2, lc) => (lc.grossRub == null || lc.grossCalcRub == null
     ? s2 : s2 + (lc.grossRub - lc.grossCalcRub)), 0);

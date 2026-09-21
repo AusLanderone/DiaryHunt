@@ -18,17 +18,16 @@ const shift = (iso, days) => {
   return d.toISOString().slice(0, 10);
 };
 
-async function computeLegMargin({ get, cache, today, trade, leg, secid, open }) {
+async function computeLegMargin({ get, cache, today, trade, leg, secid }) {
   const day = today || new Date().toISOString().slice(0, 10);
-  if (!open && !calc.legIsClosed(leg, trade)) {
+  if (!calc.legIsClosed(leg, trade)) {
     throw new Error('Нога не закрыта: вариационную маржу считать не из чего');
   }
   // the span is the leg's own: with several fills it can be narrower than the
-  // trade, and the contract is the one traded on the day of the first fill.
-  // An open leg runs to today — whatever the exchange has published by now.
+  // trade, and the contract is the one traded on the day of the first fill
   const fills = calc.legFills(leg, trade);
   const openDate = fills[0].date || trade.openDate;
-  const closeDate = open ? day : (fills[fills.length - 1].date || trade.closeDate);
+  const closeDate = fills[fills.length - 1].date || trade.closeDate;
   if (!openDate || !closeDate) {
     throw new Error('У ноги нет дат исполнения: вариационную маржу считать не из чего');
   }
@@ -63,35 +62,13 @@ async function computeLegMargin({ get, cache, today, trade, leg, secid, open }) 
   const series = await cache.remember(`cbr|${from}|${closeDate}`, settled(closeDate),
     () => rates.fetchCbrSeries({ get, from, till: closeDate }));
 
-  // An open position is worth marking today as well, but today's clearing has
-  // not happened — so the last price the exchange has shown stands in for it.
-  // It runs about fifteen minutes behind, hence the stamp that travels with it.
-  const marks = (settles || []).slice();
-  let live = null;
-  if (open && !marks.some((m) => String(m.date) === day)) {
-    try {
-      const last = await rates.fetchLast({ get, secid: contract.secid });
-      if (last && last.price > 0) {
-        live = { price: last.price, time: last.time, systime: last.systime };
-        marks.push({ date: day, settle: last.price });
-      }
-    } catch {
-      /* no live price is not an error: the accrual simply stops at the last clearing */
-    }
-  }
-
-  const out = vm.compute({ leg, openDate, closeDate, settles: marks, rates: series || [], open });
+  const out = vm.compute({ leg, openDate, closeDate, settles: settles || [], rates: series || [] });
   if (!out) {
     throw new Error(`Не хватает данных: курс ЦБ или расчётные цены ${contract.secid} за ${openDate}—${closeDate}`);
   }
-  // when the last mark is the live price, say so — it is a quote, not a clearing
-  const liveIncluded = Boolean(live && out.through === day);
   return { ...out, secid: contract.secid, assetCode, contractAsOf,
-    // the fingerprint describes the LEG AS IT STANDS, not the window it was read
-    // over: an open leg has no closing date, and borrowing today's would make
-    // the figure look stale the moment it was stored
+    // the fingerprint describes the leg as it stands, not the window it was read over
     fingerprint: calc.vmFingerprint(leg, trade),
-    live: liveIncluded ? { price: live.price, time: live.time } : null,
     computedAt: new Date().toISOString() };
 }
 

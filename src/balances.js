@@ -70,10 +70,11 @@ function flowRub(flow) {
   return flow.kind === 'out' ? -raw : raw;
 }
 
-// net movement up to and including a date
-function flowsUpTo(flows, date) {
+// net movement up to and including a date, counted from `after` exclusive —
+// anything that happened on or before the first snapshot is already inside it
+function flowsUpTo(flows, date, after) {
   return (flows || [])
-    .filter((f) => String(f.date) <= String(date))
+    .filter((f) => String(f.date) <= String(date) && (!after || String(f.date) > String(after)))
     .reduce((s, f) => s + flowRub(f), 0);
 }
 
@@ -90,16 +91,21 @@ function flowTotals(flows) {
 // snapshot, add the profit of every trade closed by each snapshot's date, and
 // the money moved in or out by then. What is left between this line and the
 // real one is unrecorded costs — not transfers.
+// The first snapshot is the starting capital, and it already contains whatever
+// was earned or deposited up to that day — so the line counts only what
+// happened AFTER it. Counting from the beginning lifted the whole line by the
+// profit of the trades closed on the day the first mark was taken.
 function journalLine(snaps, trades, flows) {
   const rows = series(snaps);
   if (!rows.length) return [];
   const base = rows[0].rub;
+  const from = rows[0].date;
   const closed = (trades || []).filter((t) => calc.isClosed(t));
   return rows.map((row) => base
     + closed
-      .filter((t) => String(t.closeDate) <= String(row.date))
+      .filter((t) => String(t.closeDate) > String(from) && String(t.closeDate) <= String(row.date))
       .reduce((s, t) => s + calc.netProfitRub(t), 0)
-    + flowsUpTo(flows, row.date));
+    + flowsUpTo(flows, row.date, from));
 }
 
 const _api = { snapshotTotals, series, deltas, byAccount, journalLine, flowRub, flowsUpTo, flowTotals };

@@ -176,10 +176,11 @@ try {
   check('each row shows how long the trade ran',
     journal.holds.length === 2 && journal.holds.every((v) => /^0\s*д$/.test(v.trim())),
     journal.holds.join('|'));
-  // #1: 1 339,40 ₽ on 3 951 841 ₽ = 0,0339%; #3: 862,97 ₽ on 2 866 523 ₽ = 0,0301%
+  // measured on the NET profit, the number the row prints beside it:
+  // #1: 1 044,40 ₽ on 3 951 841 ₽ = 0,0264%; #3: 3 923,97 ₽ on 2 866 523 ₽ = 0,1369%
   check('each row shows what it returned on that money',
-    journal.rets.length === 2 && journal.rets.some((v) => /\+0,034%/.test(v))
-    && journal.rets.some((v) => /\+0,030%/.test(v)), journal.rets.join('|'));
+    journal.rets.length === 2 && journal.rets.some((v) => /\+0,026%/.test(v))
+    && journal.rets.some((v) => /\+0,137%/.test(v)), journal.rets.join('|'));
   // #1 collected 0.1904% - 0.1484% = 0.0419%; #3 moved 0.1150% and both closed
   // in profit, so both read as a plus whichever way their spread went
   check('closed rows show the spread actually collected, signed by the result',

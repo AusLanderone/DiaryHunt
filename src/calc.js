@@ -140,10 +140,13 @@ function spreadCollected(trade) {
   return profit < 0 ? -Math.abs(diff) : Math.abs(diff);
 }
 
-function grossTotal(trade) {
+// What the legs made before costs, in ROUBLES. Adding the legs' own figures
+// together would add dollars to roubles the moment a trade mixes currencies —
+// which is why this converts each leg first, exactly as pnlRub does.
+function grossTotalRub(trade) {
   let sum = 0;
   for (const leg of trade.legs) {
-    const g = legGross(leg, trade);
+    const g = legGrossRub(leg, trade.usdRub, trade);
     if (g === null) return null;
     sum += g;
   }
@@ -253,7 +256,11 @@ function legMoneySource(leg, trade) {
 // against it instead of quietly replacing it.
 function legGrossCalcRub(leg, usdRub, trade) {
   const g = legGross(leg, trade);
-  return g === null ? null : g * legRateRub(leg, usdRub);
+  if (g === null) return null;
+  const rate = legRateRub(leg, usdRub);
+  // a dollar leg with no rate cannot be turned into roubles: saying nothing is
+  // better than calling it zero and quietly losing the leg from every total
+  return rate > 0 ? g * rate : null;
 }
 
 function legGrossRub(leg, usdRub, trade) {
@@ -312,13 +319,8 @@ function positionEndRub(trade) {
 // currency and fees are already roubles. The dollar figure derives from it, so
 // an all-dollar trade lands on exactly the numbers it did before.
 function pnlRub(trade) {
-  let sum = 0;
-  for (const leg of trade.legs) {
-    const g = legGrossRub(leg, trade.usdRub, trade);
-    if (g === null) return null;
-    sum += g;
-  }
-  return sum - feeTotalRub(trade);
+  const gross = grossTotalRub(trade);
+  return gross === null ? null : gross - feeTotalRub(trade);
 }
 
 function pnlNet(trade) {
@@ -342,11 +344,14 @@ function positionEndAvgRub(trade) {
 }
 
 // Return on the capital a single side of the trade ties up — the figure that
-// answers "what did this trade earn on the money it needed".
+// answers "what did this trade earn on the money it needed". It is measured on
+// the NET profit, the same number the journal prints beside it: measuring it on
+// the gross made the two columns disagree about the sign whenever the payout
+// was bigger than the trade's own result.
 function pnlNetPct(trade) {
-  const rub = pnlRub(trade);
+  const net = netProfitRub(trade);
   const base = positionStartAvgRub(trade);
-  return rub === null || base === 0 ? null : rub / base;
+  return net === null || base === 0 ? null : net / base;
 }
 
 // Net profit = PnL in roubles plus the manual adjustments: payout (the
@@ -371,13 +376,19 @@ function isClosed(trade) {
 // - MOEX leg in loss    -> rebate on transferring the other legs' profit back to
 //                          MOEX: payout = +rate * (other legs' profit ₽)
 function estimatePayout(trade, rate) {
-  const moex = trade.legs.find((l) => l.exchange === 'MOEX');
-  if (!moex) return null;
-  const g = legGrossRub(moex, trade.usdRub, trade);
-  if (g === null) return null;
+  const moexLegs = trade.legs.filter((l) => l.exchange === 'MOEX');
+  if (!moexLegs.length) return null;
+  // a triangle can stand on two MOEX legs: the tax is on what the venue made
+  // altogether, not on whichever leg happens to be listed first
+  let g = 0;
+  for (const leg of moexLegs) {
+    const one = legGrossRub(leg, trade.usdRub, trade);
+    if (one === null) return null;
+    g += one;
+  }
   if (g > 0) return -rate * g;
   const otherProfit = trade.legs
-    .filter((l) => l !== moex)
+    .filter((l) => l.exchange !== 'MOEX')
     .reduce((s, l) => { const lg = legGrossRub(l, trade.usdRub, trade); return s + (lg && lg > 0 ? lg : 0); }, 0);
   return rate * otherProfit;
 }
@@ -421,7 +432,7 @@ function computeTrade(trade) {
     exitSpread: exitSpread(trade),
     spreadTotal: spreadTotal(trade),
     spreadCollected: spreadCollected(trade),
-    grossTotal: grossTotal(trade),
+    grossTotalRub: grossTotalRub(trade),
     feeTotalRub: feeTotalRub(trade),
     pnlNet: pnlNet(trade),
     pnlRub: pnlRub(trade),
@@ -441,7 +452,7 @@ const _api = {
   legPositionStart, legPositionEnd, legGross,
   legFills, legUnits, legAvgEntry, legAvgExit, legIsClosed,
   entrySpread, exitSpread, spreadTotal, spreadCollected, legRole, spreadFormula,
-  grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
+  grossTotalRub, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   legRateRub, legPnlFactRub, legGrossCalcRub, legDeviation, impliedLegRate,
   vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource,

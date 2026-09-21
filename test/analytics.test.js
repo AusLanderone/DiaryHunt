@@ -242,3 +242,28 @@ test('feeSummary — no gross to speak of leaves the share unanswered', () => {
   near(s.total, 50);
   assert.strictEqual(s.share, null);
 });
+
+// ---------- what the audit turned up ----------
+
+test('a trade with no spread is not a trade with a spread of zero', () => {
+  const oneLeg = {
+    num: 1, ticker: 'GOLD', openDate: '2026-09-01', closeDate: '2026-09-01',
+    usdRub: 84, payout: 0, adjustment: 0,
+    legs: [{ exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 1, exitPrice: 110, feeRub: 0 }],
+  };
+  const buckets = analytics.spreadBuckets([oneLeg]);
+  assert.strictEqual(buckets.reduce((s, b) => s + b.count, 0), 0, 'it is left out, not put in the first band');
+});
+
+test('a close date before the open date lands in no holding band', () => {
+  const backwards = {
+    num: 2, ticker: 'GOLD', openDate: '2026-09-05', closeDate: '2026-09-01',
+    usdRub: 84, payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 1, exitPrice: 110, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 1, exitPrice: 105, feeRub: 0 },
+    ],
+  };
+  assert.strictEqual(analytics.holdingDays(backwards), null);
+  assert.strictEqual(analytics.holdingBuckets([backwards]).reduce((s, b) => s + b.count, 0), 0);
+});

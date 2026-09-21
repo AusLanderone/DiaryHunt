@@ -51,23 +51,24 @@ test('spread sign is leg-order based, not side based (trade 3)', () => {
 });
 
 test('trade totals match sheet (trade 1)', () => {
-  near(calc.grossTotal(trade1), 22.0);
+  near(calc.grossTotalRub(trade1), 22.0 * 83.7, 0.5);   // roubles, so a mixed-currency trade can be summed
   near(calc.feeTotalRub(trade1), 502);
   near(calc.pnlNet(trade1), 16.0, 0.02);
   near(calc.pnlRub(trade1), 1339.4, 0.5);
-  near(calc.pnlNetPct(trade1), 0.00033894, 1e-6);   // measured against one leg, not both
+  // the return is measured on the NET profit — the number printed beside it — against one leg
+  near(calc.pnlNetPct(trade1), 1044.4 / calc.positionStartAvgRub(trade1), 1e-6);
   near(calc.netProfitRub(trade1), 1044.4, 0.5);
 });
 
 test('trade totals match sheet (trade 3, short leg first)', () => {
-  near(calc.grossTotal(trade3), 10.7);
+  near(calc.grossTotalRub(trade3), 10.7 * 84.95, 0.5);
   near(calc.pnlNet(trade3), 10.16, 0.02);
   near(calc.netProfitRub(trade3), 3923.97, 0.5);
 });
 
 test('open trade returns nulls for exit-dependent values', () => {
   assert.strictEqual(calc.exitSpread(tradeOpen), null);
-  assert.strictEqual(calc.grossTotal(tradeOpen), null);
+  assert.strictEqual(calc.grossTotalRub(tradeOpen), null);
   assert.strictEqual(calc.pnlNet(tradeOpen), null);
   assert.strictEqual(calc.isClosed(tradeOpen), false);
   near(calc.legPositionStart(tradeOpen.legs[0]), 36543.5); // start still computable
@@ -622,4 +623,58 @@ test('an older fingerprint still validates the leg it was written for', () => {
   const t = { ...trade23, openDate: '2026-09-21' };
   assert.strictEqual(calc.legVmStale(leg, t), false);
   assert.strictEqual(calc.legVmStale({ ...leg, units: 20 }, t), true);
+});
+
+// ---------- what the audit turned up ----------
+
+test('the return follows the net profit, so the two columns cannot disagree', () => {
+  // a payout bigger than the trade's own result flips the money but used to
+  // leave the percentage pointing the other way
+  const t = { ...trade1, payout: -2000 };
+  assert.ok(calc.pnlRub(t) > 0 && calc.netProfitRub(t) < 0, 'the fixture must flip');
+  assert.ok(calc.pnlNetPct(t) < 0, 'and the return flips with it');
+  near(calc.pnlNetPct(t), calc.netProfitRub(t) / calc.positionStartAvgRub(t), 1e-12);
+});
+
+test('a triangle standing on two MOEX legs is taxed on both', () => {
+  const tri = {
+    usdRub: 84, openDate: '2026-09-01', closeDate: '2026-09-02', payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 0, role: 'mul' },
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 0, role: 'mul' },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 105, feeRub: 0, role: 'div' },
+    ],
+  };
+  // each leg moved 10 points on 10 units: 100 $ a leg, 200 $ together
+  near(calc.estimatePayout(tri, 0.06), -0.06 * 200 * 84, 1);
+});
+
+test('a dollar leg with no rate has no rouble figure, rather than a figure of zero', () => {
+  const noRate = {
+    usdRub: 0, openDate: '2026-09-01', closeDate: '2026-09-01', payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110, feeRub: 50 },
+      { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 105, feeRub: 0 },
+    ],
+  };
+  assert.strictEqual(calc.legGrossRub(noRate.legs[0], noRate.usdRub, noRate), null);
+  assert.strictEqual(calc.pnlRub(noRate), null);
+  assert.strictEqual(calc.netProfitRub(noRate), null);
+  assert.strictEqual(calc.pnlNetPct(noRate), null);
+  assert.strictEqual(calc.estimatePayout(noRate, 0.06), null);
+  // a leg priced in roubles needs no rate at all
+  const rubLeg = { ...noRate, legs: [{ ...noRate.legs[0], priceCcy: 'RUB' }, noRate.legs[1]] };
+  near(calc.legGrossRub(rubLeg.legs[0], 0, rubLeg), 100);
+});
+
+test('the gross of a mixed-currency trade is a sum in roubles', () => {
+  const mixed = {
+    usdRub: 84.2, openDate: '2026-09-01', closeDate: '2026-09-01', payout: 0, adjustment: 0,
+    legs: [
+      { exchange: 'MOEX', side: 'Лонг', priceCcy: 'RUB', entryPrice: 100000, units: 1, exitPrice: 110000, feeRub: 0 },
+      { exchange: 'FOREX', side: 'Шорт', priceCcy: 'USD', entryPrice: 1000, units: 1, exitPrice: 900, feeRub: 0 },
+    ],
+  };
+  near(calc.grossTotalRub(mixed), 10000 + 100 * 84.2, 1e-6);
+  near(calc.pnlRub(mixed), calc.grossTotalRub(mixed), 1e-6);
 });

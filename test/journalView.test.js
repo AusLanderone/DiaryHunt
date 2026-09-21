@@ -338,3 +338,29 @@ test('rowStats — the sort orders trades the way the columns read', () => {
     assert.deepStrictEqual(nums(jv.sortTrades([small, big], key, 'desc')), byColumn(key), key);
   }
 });
+
+// ---------- what the audit turned up ----------
+
+test('a closed trade belongs to the month it closed in', () => {
+  const across = trade({ num: 5, openDate: '2026-08-28', closeDate: '2026-09-17' });
+  const groups = jv.groupByMonth([across]);
+  assert.deepStrictEqual(groups.map((g) => g.key), ['2026-09']);
+  // and that is the month the statistics tab counts it in, so the two agree
+  const an = require('../src/analytics');
+  assert.strictEqual(an.byMonth([across])[0].key, '2026-09');
+  assert.strictEqual(groups[0].profit, an.byMonth([across])[0].profit);
+});
+
+test('an open trade has only the month it started in', () => {
+  const open = trade({ num: 6, openDate: '2026-09-18', open: true });
+  const groups = jv.groupByMonth([open]);
+  assert.deepStrictEqual(groups.map((g) => g.key), ['2026-09']);
+  assert.strictEqual(groups[0].openCount, 1);
+  assert.strictEqual(groups[0].profit, 0);
+});
+
+test('a close date before the open date is no holding at all', () => {
+  assert.strictEqual(jv.heldDays({ openDate: '2026-09-05', closeDate: '2026-09-01' }), null);
+  assert.strictEqual(jv.heldDays({ openDate: '2026-09-01', closeDate: '2026-09-01' }), 0);
+  assert.strictEqual(jv.heldDays({ openDate: '2026-09-01', closeDate: '2026-09-04' }), 3);
+});

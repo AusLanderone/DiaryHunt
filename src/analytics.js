@@ -65,7 +65,9 @@ function spreadBuckets(trades, edges = SPREAD_EDGES) {
   }));
   buckets.push({ label: `> ${pct1(edges[edges.length - 1])}%`, profit: 0, count: 0, wins: 0 });
   for (const t of closedOnly(trades)) {
-    const s = Math.abs(calc.entrySpread(t));
+    const raw = calc.entrySpread(t);
+    if (raw === null) continue;    // no spread to bucket is not a spread of zero
+    const s = Math.abs(raw);
     let i = edges.findIndex((e) => s < e);
     if (i === -1) i = edges.length;
     const b = buckets[i];
@@ -82,7 +84,8 @@ const asUTC = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); r
 
 function holdingDays(trade) {
   if (!trade.openDate || !trade.closeDate) return null;
-  return Math.round((asUTC(trade.closeDate) - asUTC(trade.openDate)) / DAY);
+  const days = Math.round((asUTC(trade.closeDate) - asUTC(trade.openDate)) / DAY);
+  return days < 0 ? null : days;   // a close before the open is a typo, not a band
 }
 
 const HOLD_EDGES = [0, 3, 7];

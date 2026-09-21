@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld('api', {
     usdRub: () => ipcRenderer.invoke('rates:usdRub'),
     pointValue: (code) => ipcRenderer.invoke('rates:pointValue', code),
   },
+  market: {
+    legMargin: (payload) => ipcRenderer.invoke('market:legMargin', payload),
+    clearCache: () => ipcRenderer.invoke('market:clearCache'),
+  },
   exportCsv: () => ipcRenderer.invoke('export:csv'),
   setZoom: (factor) => webFrame.setZoomFactor(factor), // proper page zoom (fills viewport)
   db: {

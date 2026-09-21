@@ -417,11 +417,16 @@ header {
 .detail-leg .swap.neg { color: var(--neg); }
 .detail-leg .pos { color: var(--muted); }   /* position value, entry -> exit */
 .detail-leg .pnl { text-align: right; font-weight: 600; }
-/* a leg whose money came from the broker's report, not from the model */
-.detail-leg .pnl.fact::after {
-  content: '\0444'; margin-left: 3px; vertical-align: super;
+/* where a leg's money came from: the broker's report, or the exchange's own
+   clearing history — the model needs no mark */
+.detail-leg .pnl.fact::after,
+.detail-leg .pnl.clearing::after {
+  margin-left: 3px; vertical-align: super;
   font-size: 8.5px; color: var(--accent); font-weight: 700;
 }
+.detail-leg .pnl.fact::after { content: '\0444'; }
+.detail-leg .pnl.clearing::after { content: '\043a'; }
+.detail-leg .pnl.stale::after { content: '!'; color: var(--neg); }
 .detail-leg .pnl.pos { color: var(--pos); }
 .detail-leg .pnl.neg { color: var(--neg); }
 
@@ -654,6 +659,14 @@ canvas { display: block; width: 100%; }
   cursor: pointer; user-select: none;
 }
 .auto-toggle input { accent-color: var(--accent); cursor: pointer; }
+
+/* the row of actions under a leg's fields: the clearing recompute and the
+   contract it was computed against */
+.leg-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.leg-actions .leg-secid {
+  max-width: 140px;
+  font-family: var(--mono); font-size: 12px; text-transform: uppercase;
+}
 
 /* the line under a leg: what it earns, and how far a broker figure stands
    from the model that tried to predict it */

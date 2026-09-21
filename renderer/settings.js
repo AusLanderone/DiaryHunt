@@ -151,6 +151,60 @@
       }
     };
 
+    // --- Расчёт по клирингам: вариационка ноги MOEX прямо из истории биржи ---
+    const clrAuto = el('input', { type: 'checkbox' });
+    clrAuto.checked = !!s.clearingAuto;
+    clrAuto.addEventListener('change', () => window.api.config.setSettings({ clearingAuto: clrAuto.checked }));
+    const clrToggle = el('label', { class: 'auto-toggle' }, [clrAuto,
+      txt('считать ноги MOEX по клирингам при сохранении сделки')]);
+    const clrBtn = el('button', { class: 'btn ghost' }, [txt('Пересчитать все закрытые сделки')]);
+    const clrCacheBtn = el('button', { class: 'btn ghost' }, [txt('Очистить кэш истории')]);
+    const clrInfo = el('div', { class: 'hint' });
+
+    clrCacheBtn.onclick = async () => {
+      await window.api.market.clearCache();
+      clrInfo.textContent = 'Кэш истории очищен — следующий расчёт сходит на биржу заново.';
+    };
+
+    // One pass over the journal: every closed MOEX leg that has no broker figure
+    // and no fresh clearing figure gets one. Past sessions come from the cache,
+    // so a second run costs almost nothing.
+    clrBtn.onclick = async () => {
+      clrBtn.disabled = true;
+      const trades = await window.api.trades.list();
+      const failed = [];
+      let touched = 0;
+      try {
+        for (const t of trades) {
+          if (!t.closeDate) continue;
+          const legs = t.legs.map((l) => ({ ...l }));
+          let changed = false;
+          for (const l of legs) {
+            if (!window.calc.isRubLeg(l) || l.exitPrice === null || l.exitPrice === undefined) continue;
+            if (window.calc.legPnlFactRub(l) !== null) continue;
+            if (window.calc.legVmRub(l, t) !== null) continue;
+            clrInfo.textContent = `считаю сделку №${t.num}…`;
+            const r = await window.api.market.legMargin({
+              trade: { ticker: t.ticker, openDate: t.openDate, closeDate: t.closeDate },
+              leg: l, secid: l.secid || undefined,
+            });
+            if (!r.ok) { failed.push(`№${t.num}: ${r.error}`); continue; }
+            l.vmRub = r.rub;
+            l.secid = r.secid;
+            l.vmMeta = { secid: r.secid, sessions: r.sessions, fingerprint: r.fingerprint, computedAt: r.computedAt };
+            changed = true;
+          }
+          if (changed) { await window.api.trades.update(t.id, { legs }); touched++; }
+        }
+        clrInfo.textContent = `Пересчитано сделок: ${touched}`
+          + (failed.length ? ` · не вышло: ${failed.length} (наведите, чтобы прочитать)` : '');
+        clrInfo.title = failed.join('\n');
+        if (window.diary) window.diary.refresh();
+      } finally {
+        clrBtn.disabled = false;
+      }
+    };
+
     // --- Синхронизация: одна ссылка на облако ---
     const syncUrl = el('input', { type: 'text', class: 'sync-url',
       placeholder: 'https://script.google.com/macros/s/…/exec' });
@@ -234,6 +288,11 @@
         el('div', { class: 'section-head' }, [txt('Данные')]),
         el('p', { class: 'hint' }, [txt('Полный бэкап в JSON: сделки, отметки баланса, движения средств, справочники и настройки — и восстановление из него. CSV — плоская выгрузка сделок для таблиц.')]),
         el('div', { class: 'data-row' }, [expBtn, impBtn, csvBtn]),
+        el('div', { class: 'section-head' }, [txt('Расчёт по клирингам')]),
+        el('p', { class: 'hint' }, [txt('Нога MOEX котируется в долларах, но платят по ней рублями: биржа переоценивает позицию каждый вечер по расчётной цене и курсу ЦБ того дня. Приложение считает эту сумму само — по истории MOEX, без единой цифры из отчёта. Прошедшие сессии кэшируются, так что сеть нужна один раз на сделку.')]),
+        clrToggle,
+        el('div', { class: 'data-row' }, [clrBtn, clrCacheBtn]),
+        clrInfo,
         el('div', { class: 'section-head' }, [txt('Синхронизация с облаком')]),
         el('p', { class: 'hint' }, [txt('Вставьте ссылку веб-приложения Google Apps Script — база будет храниться файлом на вашем Google Диске: выгружаться после каждого изменения и подтягиваться при запуске. Та же ссылка на другом устройстве даёт те же данные.')]),
         syncUrl,

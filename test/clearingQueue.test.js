@@ -1,7 +1,7 @@
 // test/clearingQueue.test.js
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { pending, needsClearing } = require('../src/clearingQueue');
+const { pending, needsClearing, pendingOpen } = require('../src/clearingQueue');
 
 const moex = (extra = {}) => ({
   exchange: 'MOEX', side: 'Шорт', entryPrice: 4538, units: 21, exitPrice: 4326.4, feeRub: 550, ...extra,
@@ -61,4 +61,35 @@ test('the queue runs oldest trade first', () => {
 test('rubbish in the list does not throw', () => {
   assert.deepStrictEqual(pending(null), []);
   assert.deepStrictEqual(pending([null, {}, { legs: [] }]), []);
+});
+
+// ---------- open positions get refreshed, not computed once ----------
+const openTrade = (legs, extra = {}) => ({
+  id: 'o1', num: 27, ticker: 'GOLD', usdRub: 84.2,
+  openDate: '2026-09-18', closeDate: '', legs, ...extra,
+});
+const openLeg = (extra = {}) => ({ exchange: 'MOEX', side: 'Шорт', entryPrice: 4411.3, units: 21, exitPrice: null, ...extra });
+
+test('an open MOEX leg with no accrual yet is queued', () => {
+  const t = openTrade([openLeg(), forex]);
+  assert.deepStrictEqual(pendingOpen([t], '2026-09-21'),
+    [{ id: 'o1', num: 27, index: 0, ticker: 'GOLD' }]);
+});
+
+test('an accrual from an earlier day is queued again — the sessions have moved on', () => {
+  const leg = openLeg();
+  const t = openTrade([leg, forex]);
+  const fp = require('../src/calc').vmFingerprint(leg, t);
+  const yesterday = openTrade([{ ...leg, vmOpenRub: 21420,
+    vmOpenMeta: { through: '2026-09-18', computedAt: '2026-09-20T18:00:00.000Z', fingerprint: fp } }, forex]);
+  assert.strictEqual(pendingOpen([yesterday], '2026-09-21').length, 1);
+  const todayDone = openTrade([{ ...leg, vmOpenRub: 21420,
+    vmOpenMeta: { through: '2026-09-18', computedAt: '2026-09-21T09:00:00.000Z', fingerprint: fp } }, forex]);
+  assert.deepStrictEqual(pendingOpen([todayDone], '2026-09-21'), [], 'already done today');
+});
+
+test('closed trades are not in the open queue, and vice versa', () => {
+  const closed = trade([moex(), forex]);
+  assert.deepStrictEqual(pendingOpen([closed], '2026-09-21'), []);
+  assert.deepStrictEqual(pending([openTrade([openLeg(), forex])]), []);
 });

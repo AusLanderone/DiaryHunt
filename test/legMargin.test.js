@@ -114,3 +114,129 @@ test('an unclosed leg of fills is refused like any other', async () => {
   ] };
   await assert.rejects(() => computeLegMargin(args({ leg: half })), /закрыт/i);
 });
+
+// ---------- the exchange publishes the day only after the evening clearing ----------
+//
+// A trade closed today is computable: every mark but the last is a past
+// session, and the last is the price it was closed at. Only the contract lookup
+// stumbles, because the list of what traded "today" is not out yet — so it
+// walks back to the last day the exchange did publish.
+test('the contract is looked up on the last day the exchange published', async () => {
+  const asked = [];
+  const get = async (url) => {
+    if (url.includes('cbr.ru')) return CBR;
+    if (url.includes('assetcode=')) {
+      const day = /date=([\d-]+)/.exec(url)[1];
+      asked.push(day);
+      // nothing for the weekend and nothing for today
+      return day >= '2026-08-29'
+        ? JSON.stringify({ history: { columns: ['SECID', 'ASSETCODE', 'SETTLEPRICE'], data: [] } })
+        : CONTRACTS;
+    }
+    return SETTLES;
+  };
+  const r = await computeLegMargin(args({
+    get, today: '2026-08-31',
+    trade: { ticker: 'GOLD', openDate: '2026-08-31', closeDate: '2026-08-31' },
+    leg: { side: 'Шорт', entryPrice: 4538, exitPrice: 4500, units: 21 },
+  }));
+  assert.strictEqual(r.secid, 'GDU6');
+  assert.deepStrictEqual(asked, ['2026-08-31', '2026-08-30', '2026-08-29', '2026-08-28'],
+    'it walks back a day at a time');
+  assert.strictEqual(r.contractAsOf, '2026-08-28', 'and says which day it settled on');
+});
+
+test('walking back has a limit — a nonexistent asset still errors', async () => {
+  const get = async (url) => (url.includes('cbr.ru') ? CBR
+    : url.includes('assetcode=') ? JSON.stringify({ history: { columns: ['SECID', 'ASSETCODE', 'SETTLEPRICE'], data: [] } })
+      : SETTLES);
+  await assert.rejects(() => computeLegMargin(args({ get })), /GOLD/);
+});
+
+test('an open leg is valued up to the last published session', async () => {
+  const log = [];
+  const r = await computeLegMargin(args({
+    get: fakeGet(log), open: true,
+    trade: { ticker: 'GOLD', openDate: '2026-08-28', closeDate: '' },
+    leg: { side: 'Шорт', entryPrice: 4538, exitPrice: null, units: 21 },
+  }));
+  assert.strictEqual(r.through, '2026-09-01');
+  assert.strictEqual(r.position, 21);
+  near(r.rub, 7 * 21 * 80 + 31 * 21 * 81 + 100 * 21 * 82, 1);
+  assert.ok(log.some((u) => /till=2026-09-20/.test(u)), 'the range runs to today: ' + log.join(' '));
+  assert.ok(log.every((u) => !/start=100/.test(u)));
+});
+
+test('an open valuation is never cached — tomorrow it is a different number', async () => {
+  const keys = [];
+  const cache = { remember: (key, cacheable, produce) => { keys.push([key, cacheable]); return produce(); } };
+  await computeLegMargin(args({
+    cache, open: true,
+    trade: { ticker: 'GOLD', openDate: '2026-08-28', closeDate: '' },
+    leg: { side: 'Шорт', entryPrice: 4538, exitPrice: null, units: 21 },
+  }));
+  assert.ok(keys.some(([k, c]) => /^settles/.test(k) && c === false), JSON.stringify(keys));
+});
+
+// ---------- today has no clearing yet, so the last quote stands in ----------
+const MARKETDATA = JSON.stringify({ marketdata: {
+  columns: ['SECID', 'LAST', 'BID', 'OFFER', 'SETTLEPRICE', 'UPDATETIME'],
+  data: [['GDU6', 4380, 4379, 4381, 4400, '18:37:29']],
+} });
+const liveGet = (log = []) => async (url) => {
+  log.push(url);
+  if (url.includes('cbr.ru')) return CBR;
+  if (url.includes('assetcode=')) return CONTRACTS;
+  if (url.includes('iss.only=marketdata')) return MARKETDATA;
+  return SETTLES;
+};
+
+test('an open leg is marked at the last quote when today has not cleared', async () => {
+  const log = [];
+  const r = await computeLegMargin({
+    get: liveGet(log), cache: noCache, today: '2026-09-02', open: true,
+    trade: { ticker: 'GOLD', openDate: '2026-08-28', closeDate: '' },
+    leg: { side: 'Шорт', entryPrice: 4538, exitPrice: null, units: 21 },
+  });
+  assert.strictEqual(r.through, '2026-09-02', 'the last mark is today');
+  assert.deepStrictEqual(r.live, { price: 4380, time: '18:37:29' });
+  assert.ok(log.some((u) => /iss\.only=marketdata/.test(u)));
+  // ... 4400 on 01.09 -> 4380 now, on 21 lots short, at the rate in force
+  near(r.rub, 7 * 21 * 80 + 31 * 21 * 81 + 100 * 21 * 82 + 20 * 21 * 82, 1);
+});
+
+test('no quote is not a failure — the accrual stops at the last clearing', async () => {
+  const get = async (url) => {
+    if (url.includes('cbr.ru')) return CBR;
+    if (url.includes('assetcode=')) return CONTRACTS;
+    if (url.includes('iss.only=marketdata')) throw new Error('MOEX молчит');
+    return SETTLES;
+  };
+  const r = await computeLegMargin({
+    get, cache: noCache, today: '2026-09-02', open: true,
+    trade: { ticker: 'GOLD', openDate: '2026-08-28', closeDate: '' },
+    leg: { side: 'Шорт', entryPrice: 4538, exitPrice: null, units: 21 },
+  });
+  assert.strictEqual(r.through, '2026-09-01');
+  assert.strictEqual(r.live, null);
+});
+
+test('a closed leg is never marked at a quote', async () => {
+  const log = [];
+  const r = await computeLegMargin(args({ get: liveGet(log) }));
+  assert.strictEqual(r.live, null);
+  assert.ok(!log.some((u) => /iss\.only=marketdata/.test(u)), 'and does not even ask');
+});
+
+test('an open leg is fingerprinted as it stands, without borrowing today as a close', async () => {
+  const calc = require('../src/calc');
+  const leg = { side: 'Шорт', entryPrice: 4538, exitPrice: null, units: 21 };
+  const openTrade = { ticker: 'GOLD', openDate: '2026-08-28', closeDate: '' };
+  const r = await computeLegMargin({ get: fakeGet(), cache: noCache, today: '2026-09-20', open: true,
+    trade: openTrade, leg });
+  assert.deepStrictEqual(r.fingerprint, calc.vmFingerprint(leg, openTrade));
+  assert.strictEqual(r.fingerprint.closeDate, null, 'an open leg has no closing date');
+  // and so the stored figure is accepted, not thrown away as stale
+  const stored = { ...leg, vmOpenRub: r.rub, vmOpenMeta: { fingerprint: r.fingerprint } };
+  assert.ok(Math.abs(calc.legInterimRub(stored, openTrade) - r.rub) < 1e-9);
+});

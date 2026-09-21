@@ -61,14 +61,10 @@ function buildMarks({ openDate, closeDate, entryPrice, exitPrice, settles }) {
 // renderer has to recognise a stale figure without this module.
 const fingerprint = (leg, trade) => calc.vmFingerprint(leg, trade);
 
-// `open: true` asks a different question — not "what did this leg make" but
-// "what has the exchange credited on it so far": the position stays open at the
-// end and the answer is stamped with the last session there was data for.
-function compute({ leg, openDate, closeDate, settles, rates, open }) {
+function compute({ leg, openDate, closeDate, settles, rates }) {
   const trade = { openDate, closeDate };
   const fills = calc.legFills(leg, trade);
-  if (!fills.length) return null;
-  if (!open && !calc.legIsClosed(leg, trade)) return null;
+  if (!fills.length || !calc.legIsClosed(leg, trade)) return null;
 
   const dir = dirOf(leg.side);
   const settleOn = new Map();
@@ -77,11 +73,8 @@ function compute({ leg, openDate, closeDate, settles, rates, open }) {
     if (price !== null && price > 0) settleOn.set(String(s.date), price);
   }
   const first = fills[0].date;
-  const lastFill = fills[fills.length - 1].date;
-  if (!first || !lastFill) return null;
-  // an open leg runs on past its last fill, to wherever the published sessions end
-  const lastSettle = [...settleOn.keys()].sort().pop() || '';
-  const last = open && lastSettle > String(lastFill) ? lastSettle : lastFill;
+  const last = fills[fills.length - 1].date;
+  if (!first || !last) return null;
 
   // every day that either moves the position or marks it
   const days = [...new Set([
@@ -127,14 +120,8 @@ function compute({ leg, openDate, closeDate, settles, rates, open }) {
     position = after;
   }
 
-  if (pending.length) return null;                               // a fill nothing ever marked
-  if (!open && Math.abs(position) > EPS) return null;            // it did not close out
-  return {
-    rub, sessions: rows.length, rows,
-    position,                                    // what is still held, 0 once closed
-    through: rows.length ? rows[rows.length - 1].date : null,
-    fingerprint: fingerprint(leg, trade),
-  };
+  if (pending.length || Math.abs(position) > EPS) return null;   // it did not close out
+  return { rub, sessions: rows.length, rows, fingerprint: fingerprint(leg, trade) };
 }
 
 module.exports = { pickContract, rateOn, buildMarks, fingerprint, compute };

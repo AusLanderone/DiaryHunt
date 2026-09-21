@@ -228,17 +228,6 @@ function legVmStale(leg, trade) {
   return fingerprintMoved(fp, vmFingerprint(leg, trade));
 }
 
-// What the exchange has already credited on a leg that is still open: the sum
-// of the clearings up to the last session MOEX has published. Not a result —
-// the position is still running — but real money, and worth seeing.
-function legInterimRub(leg, trade) {
-  if (!filled(leg.vmOpenRub)) return null;
-  if (legIsClosed(leg, trade)) return null;      // closed legs have the real figure
-  const fp = leg.vmOpenMeta && leg.vmOpenMeta.fingerprint;
-  if (fp && fingerprintMoved(fp, vmFingerprint(leg, trade))) return null;
-  return Number(leg.vmOpenRub);
-}
-
 // The roubles MOEX credited over the life of the position, summed session by
 // session at each day's rate — what «↻ по клирингам» computes and stores.
 function legVmRub(leg, trade) {
@@ -419,9 +408,6 @@ function computeTrade(trade) {
         grossCalcRub: legGrossCalcRub(leg, trade.usdRub, trade),
         factRub: legPnlFactRub(leg),
         vmRub: legVmRub(leg, trade),
-        interimRub: legInterimRub(leg, trade),
-        interimThrough: (leg.vmOpenMeta && leg.vmOpenMeta.through) || null,
-        interimLive: (leg.vmOpenMeta && leg.vmOpenMeta.live) || null,
         vmStale: legVmStale(leg, trade),
         vmMeta: leg.vmMeta || null,
         source: legMoneySource(leg, trade),
@@ -458,7 +444,7 @@ const _api = {
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   legRateRub, legPnlFactRub, legGrossCalcRub, legDeviation, impliedLegRate,
-  vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource, legInterimRub,
+  vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource,
   positionStartAvgRub, positionEndAvgRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,

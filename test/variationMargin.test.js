@@ -163,36 +163,3 @@ test('a leg that is not fully closed has no margin', () => {
   const half = { side: 'Шорт', fills: shrinking.fills.slice(0, 2) };
   assert.strictEqual(vm.compute({ leg: half, ...trade, settles, rates }), null);
 });
-
-// ---------- a position that is still open ----------
-//
-// While a trade runs, the exchange has already credited everything up to the
-// last session it published. That is not a forecast — it is money already on
-// the account — so it can be shown as it accrues.
-test('an open leg accrues up to the last published clearing', () => {
-  const open = { side: 'Шорт', fills: [{ date: '2026-08-28', price: 4538, units: 21, kind: 'in' }] };
-  const r = vm.compute({ leg: open, openDate: '2026-08-28', closeDate: '', settles, rates, open: true });
-  assert.strictEqual(r.through, '2026-09-01', 'the last session there is data for');
-  assert.strictEqual(r.position, 21, 'and the position it is still holding');
-  // 4538 -> 4531 -> 4500 -> 4400, each at its own rate
-  near(r.rub, 7 * 21 * 80 + 31 * 21 * 81 + 100 * 21 * 82, 1);
-  assert.strictEqual(r.sessions, 3);
-});
-
-test('an open leg that was partly closed accrues on what is left', () => {
-  const part = { side: 'Шорт', fills: [
-    { date: '2026-08-28', price: 4538, units: 21, kind: 'in' },
-    { date: '2026-08-31', price: 4505, units: 1, kind: 'out' },
-  ] };
-  const r = vm.compute({ leg: part, openDate: '2026-08-28', closeDate: '', settles, rates, open: true });
-  assert.strictEqual(r.position, 20);
-  near(r.rub, 147 * 80 + 646 * 81 + 100 * 20 * 82, 1);
-});
-
-test('closed and open are different questions', () => {
-  const open = { side: 'Шорт', fills: [{ date: '2026-08-28', price: 4538, units: 21, kind: 'in' }] };
-  assert.strictEqual(vm.compute({ leg: open, openDate: '2026-08-28', closeDate: '', settles, rates }), null,
-    'without the open flag an unclosed leg still has no result');
-  const done = vm.compute({ leg: shrinking, ...trade, settles, rates, open: true });
-  assert.strictEqual(done.position, 0, 'a leg that did close reports nothing left');
-});

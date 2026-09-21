@@ -229,7 +229,7 @@ function registerIpc() {
         get: httpGet,
         cache: marketCache,
         today: new Date().toISOString().slice(0, 10),
-        trade: payload.trade, leg: payload.leg, secid: payload.secid, open: payload.open,
+        trade: payload.trade, leg: payload.leg, secid: payload.secid,
       });
       return { ok: true, ...out };
     } catch (err) {

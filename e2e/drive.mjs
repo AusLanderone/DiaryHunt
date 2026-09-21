@@ -2241,61 +2241,6 @@ try {
   check('with the execution count beside the size',
     /3 исп/.test(detailFills.units), detailFills.units);
 
-  // ---------------------------------------------------------------------
-  console.log('\n[14] what an open position has already been credited');
-  // The accrual is stored on the leg the same way a finished figure is; here it
-  // is put there by hand, because the suite never calls the exchange.
-  const accrued = await page.evaluate(async () => {
-    const t = await window.api.trades.add({
-      openDate: '2026-09-18', closeDate: '', type: 'Фьючи', ticker: 'GOLD', tag: 'Схождение',
-      usdRub: 84.2, payout: 0, adjustment: 0, comment: 'e2e accrual',
-      legs: [
-        { exchange: 'MOEX', side: 'Шорт', entryPrice: 4411.3, units: 21, exitPrice: null, feeRub: 0 },
-        { exchange: 'FOREX', side: 'Лонг', entryPrice: 4338.02, units: 20, exitPrice: null, feeRub: 0 },
-      ],
-    });
-    const leg = t.legs[0];
-    const fingerprint = window.calc.vmFingerprint(leg, t);
-    const legs = [{ ...leg, vmOpenRub: 21420,
-      vmOpenMeta: { secid: 'GDZ6', sessions: 2, through: '2026-09-18',
-        computedAt: new Date().toISOString(), fingerprint } }, t.legs[1]];
-    const saved = await window.api.trades.update(t.id, { legs });
-    const c = window.calc.computeTrade(saved);
-    return { num: saved.num, interim: c.legs[0].interimRub, through: c.legs[0].interimThrough,
-      closed: c.closed, pnl: c.pnlRub, other: c.legs[1].interimRub };
-  });
-  check('an open leg carries what has been credited so far',
-    Math.abs(accrued.interim - 21420) < 1 && accrued.through === '2026-09-18', JSON.stringify(accrued));
-  check('and it stays an open trade with no result',
-    accrued.closed === false && accrued.pnl === null && accrued.other === null, JSON.stringify(accrued));
-
-  await page.evaluate(() => window.diary.refresh());
-  await page.waitForSelector('.trade-row', { timeout: 8000 });
-  const accruedRow = await page.evaluate((num) => {
-    const row = [...document.querySelectorAll('.trade-row')].find((r) => r.innerText.trim().startsWith(String(num)));
-    const note = row.querySelector('.jc.money .accrued');
-    return { pill: !!row.querySelector('.pill.open'), note: note ? note.textContent : null,
-      title: note ? note.title : null };
-  }, accrued.num);
-  check('the row shows it under the «открыта» badge',
-    accruedRow.pill && /MOEX \+21 ?420/.test((accruedRow.note || '').replace(/\u00a0/g, ' ')),
-    JSON.stringify(accruedRow));
-  check('and says plainly that it is one leg, not the trade',
-    /одна нога, а не результат/.test(accruedRow.title || ''), accruedRow.title);
-
-  await page.evaluate((num) => {
-    const row = [...document.querySelectorAll('.trade-row')].find((r) => r.innerText.trim().startsWith(String(num)));
-    if (row && !row.classList.contains('expanded')) row.click();
-  }, accrued.num);
-  await page.waitForFunction(() => [...document.querySelectorAll('.trade-detail')]
-    .some((d) => d.textContent.includes('e2e accrual')), null, { timeout: 5000 });
-  const accruedDetail = await page.evaluate(() => [...document.querySelectorAll('.trade-detail')]
-    .find((d) => d.textContent.includes('e2e accrual')).querySelector('.detail-meta').innerText.replace(/\s+/g, ' '));
-  check('the card names the venue and the session it is counted to',
-    /НАЧИСЛЕНО · MOEX НА 18 СЕН/i.test(accruedDetail), accruedDetail);
-  await page.screenshot({ path: path.join(SHOT, '14-accrued.png') });
-
-
 } catch (err) {
   failures++;
   console.error('\nE2E ERROR:', err.message);

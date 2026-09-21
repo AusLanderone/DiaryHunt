@@ -172,38 +172,6 @@ async function fetchCbrSeries({ get, from, till }) {
   return parseCbrSeries(await get(cbrSeriesUrl(from, till)));
 }
 
-// The last price the exchange has shown for a contract. The free ISS feed runs
-// about fifteen minutes behind, which is why every figure built on it is
-// stamped with the time it belongs to rather than "now".
-function parseLast(text) {
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  const md = json && json.marketdata;
-  const row = md && Array.isArray(md.data) ? md.data[0] : null;
-  if (!row || !Array.isArray(md.columns)) return null;
-  const at = (name) => {
-    const i = md.columns.indexOf(name);
-    return i === -1 ? null : row[i];
-  };
-  const bid = Number(at('BID')) || 0;
-  const ask = Number(at('OFFER')) || 0;
-  const price = Number(at('LAST')) || (bid && ask ? (bid + ask) / 2 : 0) || Number(at('SETTLEPRICE')) || 0;
-  if (!price) return null;
-  return { price, time: at('UPDATETIME') || null, systime: at('SYSTIME') || null, secid: at('SECID') || null };
-}
-
-const lastUrl = (secid) => 'https://iss.moex.com/iss/engines/futures/markets/forts/securities/'
-  + `${encodeURIComponent(secid)}.json?iss.meta=off&iss.only=marketdata`
-  + '&marketdata.columns=SECID,LAST,BID,OFFER,SETTLEPRICE,UPDATETIME,SYSTIME';
-
-async function fetchLast({ get, secid }) {
-  return parseLast(await get(lastUrl(secid)));
-}
-
 async function fetchUsdRub({ get }) {
   try {
     const moex = parseMoex(await get(MOEX_URL));
@@ -222,5 +190,4 @@ async function fetchUsdRub({ get }) {
 
 module.exports = { parseMoex, parseCbr, parseStepPrice, fetchUsdRub, fetchPointValue,
   parseSettles, parseContracts, parseCbrSeries, fetchSettles, fetchContracts, fetchCbrSeries,
-  parseLast, fetchLast,
   MOEX_URL, CBR_URL, FORTS_URL, HISTORY, CBR_SERIES };

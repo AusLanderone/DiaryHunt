@@ -12,11 +12,7 @@
   const Q = () => window.clearingQueue;
 
   async function runClearing(trades, onProgress) {
-    const today = new Date().toISOString().slice(0, 10);
-    const todo = [
-      ...Q().pending(trades).map((x) => ({ ...x, open: false })),
-      ...Q().pendingOpen(trades, today).map((x) => ({ ...x, open: true })),
-    ];
+    const todo = Q().pending(trades);
     const failed = [];
     let done = 0;
     if (!todo.length) return { total: 0, done: 0, failed };
@@ -39,21 +35,14 @@
         const leg = legs[item.index];
         const r = await window.api.market.legMargin({
           trade: { ticker: trade.ticker, openDate: trade.openDate, closeDate: trade.closeDate },
-          leg, secid: leg.secid || undefined, open: item.open,
+          leg, secid: leg.secid || undefined,
         });
         done++;
         if (!r.ok) { failed.push(`№${trade.num}: ${r.error}`); continue; }
         leg.secid = r.secid;
-        if (item.open) {
-          // an accrual, not a result: it is refreshed every day the exchange adds a session
-          leg.vmOpenRub = r.rub;
-          leg.vmOpenMeta = { secid: r.secid, sessions: r.sessions, through: r.through,
-            live: r.live || null, fingerprint: r.fingerprint, computedAt: r.computedAt };
-        } else {
-          leg.vmRub = r.rub;
-          leg.vmMeta = { secid: r.secid, sessions: r.sessions,
-            fingerprint: r.fingerprint, computedAt: r.computedAt };
-        }
+        leg.vmRub = r.rub;
+        leg.vmMeta = { secid: r.secid, sessions: r.sessions,
+          fingerprint: r.fingerprint, computedAt: r.computedAt };
         changed = true;
       }
       if (changed) await window.api.trades.update(trade.id, { legs });

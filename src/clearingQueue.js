@@ -23,6 +23,28 @@ function needsClearing(leg, trade) {
   return calc.legVmRub(leg, trade) === null;        // missing, or stale and dropped
 }
 
+// An open position is a moving target: the exchange adds a session every
+// evening, so its accrual is refreshed once a day rather than computed once.
+function needsOpenClearing(leg, trade, today) {
+  if (!calc.isRubLeg(leg)) return false;
+  if (calc.legIsClosed(leg, trade)) return false;         // a closed leg has the real figure
+  if (!calc.legFills(leg, trade).length) return false;    // nothing entered yet
+  if (calc.legInterimRub(leg, trade) === null) return true;
+  const at = String((leg.vmOpenMeta && leg.vmOpenMeta.computedAt) || '').slice(0, 10);
+  return at !== String(today || new Date().toISOString().slice(0, 10));
+}
+
+function pendingOpen(trades, today) {
+  const out = [];
+  for (const trade of (trades || [])) {
+    if (!trade || !Array.isArray(trade.legs) || trade.closeDate) continue;
+    trade.legs.forEach((leg, index) => {
+      if (needsOpenClearing(leg, trade, today)) out.push({ id: trade.id, num: trade.num, index, ticker: trade.ticker });
+    });
+  }
+  return out.sort((a, b) => (a.num || 0) - (b.num || 0));
+}
+
 // Legs to compute, oldest trade first — the cache warms in the order the
 // history is read, and a long journal shows progress from the top.
 function pending(trades) {
@@ -36,7 +58,7 @@ function pending(trades) {
   return out.sort((a, b) => (a.num || 0) - (b.num || 0));
 }
 
-const _api = { pending, needsClearing };
+const _api = { pending, needsClearing, pendingOpen, needsOpenClearing };
 if (typeof module !== 'undefined' && module.exports) module.exports = _api;
 if (typeof window !== 'undefined') window.clearingQueue = _api;
 })();

@@ -211,10 +211,7 @@ function vmFingerprint(leg, trade) {
 // A figure computed clearing by clearing describes the leg it was computed from.
 // Move a price, a size or a date and it is a number about a different trade, so
 // it is dropped rather than quietly believed.
-function legVmStale(leg, trade) {
-  const fp = leg.vmMeta && leg.vmMeta.fingerprint;
-  if (!fp) return false;
-  const now = vmFingerprint(leg, trade);
+function fingerprintMoved(fp, now) {
   // only the fields the stored fingerprint actually named: one written before
   // fills existed still guards the leg it was written for
   return Object.keys(fp).some((k) => {
@@ -223,6 +220,23 @@ function legVmStale(leg, trade) {
     if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) > 1e-9;
     return a !== b;
   });
+}
+
+function legVmStale(leg, trade) {
+  const fp = leg.vmMeta && leg.vmMeta.fingerprint;
+  if (!fp) return false;
+  return fingerprintMoved(fp, vmFingerprint(leg, trade));
+}
+
+// What the exchange has already credited on a leg that is still open: the sum
+// of the clearings up to the last session MOEX has published. Not a result —
+// the position is still running — but real money, and worth seeing.
+function legInterimRub(leg, trade) {
+  if (!filled(leg.vmOpenRub)) return null;
+  if (legIsClosed(leg, trade)) return null;      // closed legs have the real figure
+  const fp = leg.vmOpenMeta && leg.vmOpenMeta.fingerprint;
+  if (fp && fingerprintMoved(fp, vmFingerprint(leg, trade))) return null;
+  return Number(leg.vmOpenRub);
 }
 
 // The roubles MOEX credited over the life of the position, summed session by
@@ -405,6 +419,9 @@ function computeTrade(trade) {
         grossCalcRub: legGrossCalcRub(leg, trade.usdRub, trade),
         factRub: legPnlFactRub(leg),
         vmRub: legVmRub(leg, trade),
+        interimRub: legInterimRub(leg, trade),
+        interimThrough: (leg.vmOpenMeta && leg.vmOpenMeta.through) || null,
+        interimLive: (leg.vmOpenMeta && leg.vmOpenMeta.live) || null,
         vmStale: legVmStale(leg, trade),
         vmMeta: leg.vmMeta || null,
         source: legMoneySource(leg, trade),
@@ -441,7 +458,7 @@ const _api = {
   grossTotal, feeTotalRub, legSwapRub, swapTotalRub, isRubLeg,
   legPriceCcy, legPriceMul, legGrossRub, positionStartRub, positionEndRub,
   legRateRub, legPnlFactRub, legGrossCalcRub, legDeviation, impliedLegRate,
-  vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource,
+  vmFingerprint, legVmStale, legVmRub, legOverrideRub, legMoneySource, legInterimRub,
   positionStartAvgRub, positionEndAvgRub,
   pnlNet, pnlRub, pnlNetPct, netProfitRub,
   isClosed, computeTrade, estimatePayout,

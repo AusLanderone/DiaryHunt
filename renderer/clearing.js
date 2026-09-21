@@ -12,7 +12,11 @@
   const Q = () => window.clearingQueue;
 
   async function runClearing(trades, onProgress) {
-    const todo = Q().pending(trades);
+    const today = new Date().toISOString().slice(0, 10);
+    const todo = [
+      ...Q().pending(trades).map((x) => ({ ...x, open: false })),
+      ...Q().pendingOpen(trades, today).map((x) => ({ ...x, open: true })),
+    ];
     const failed = [];
     let done = 0;
     if (!todo.length) return { total: 0, done: 0, failed };
@@ -22,26 +26,34 @@
     const byTrade = new Map();
     for (const item of todo) {
       if (!byTrade.has(item.id)) byTrade.set(item.id, []);
-      byTrade.get(item.id).push(item.index);
+      byTrade.get(item.id).push(item);
     }
 
-    for (const [id, indexes] of byTrade) {
+    for (const [id, items] of byTrade) {
       const trade = trades.find((t) => t.id === id);
       if (!trade) continue;
       if (onProgress) onProgress({ total: todo.length, done, trade });
       const legs = trade.legs.map((l) => ({ ...l }));
       let changed = false;
-      for (const index of indexes) {
-        const leg = legs[index];
+      for (const item of items) {
+        const leg = legs[item.index];
         const r = await window.api.market.legMargin({
           trade: { ticker: trade.ticker, openDate: trade.openDate, closeDate: trade.closeDate },
-          leg, secid: leg.secid || undefined,
+          leg, secid: leg.secid || undefined, open: item.open,
         });
         done++;
         if (!r.ok) { failed.push(`№${trade.num}: ${r.error}`); continue; }
-        leg.vmRub = r.rub;
         leg.secid = r.secid;
-        leg.vmMeta = { secid: r.secid, sessions: r.sessions, fingerprint: r.fingerprint, computedAt: r.computedAt };
+        if (item.open) {
+          // an accrual, not a result: it is refreshed every day the exchange adds a session
+          leg.vmOpenRub = r.rub;
+          leg.vmOpenMeta = { secid: r.secid, sessions: r.sessions, through: r.through,
+            live: r.live || null, fingerprint: r.fingerprint, computedAt: r.computedAt };
+        } else {
+          leg.vmRub = r.rub;
+          leg.vmMeta = { secid: r.secid, sessions: r.sessions,
+            fingerprint: r.fingerprint, computedAt: r.computedAt };
+        }
         changed = true;
       }
       if (changed) await window.api.trades.update(trade.id, { legs });

@@ -214,3 +214,39 @@ test('fetchContracts — asks for one asset code on one day', async () => {
   assert.match(seen[0], /assetcode=GOLD/);
   assert.match(seen[0], /date=2026-08-28/);
 });
+
+// ---------- the last price the exchange has shown ----------
+const mdFeed = JSON.stringify({
+  marketdata: {
+    columns: ['SECID', 'LAST', 'BID', 'OFFER', 'SETTLEPRICE', 'UPDATETIME', 'SYSTIME'],
+    data: [['GDZ6', 4429.1, 4429, 4429.1, 4428.2, '18:37:29', '2026-09-21 18:52:31']],
+  },
+});
+
+test('parseLast — the traded price, with the time it was traded at', () => {
+  const r = rates.parseLast(mdFeed);
+  assert.strictEqual(r.price, 4429.1);
+  assert.strictEqual(r.time, '18:37:29');
+  assert.strictEqual(r.systime, '2026-09-21 18:52:31');
+});
+
+test('parseLast — falls back to the middle of the book, then to the clearing price', () => {
+  const noLast = JSON.stringify({ marketdata: {
+    columns: ['SECID', 'LAST', 'BID', 'OFFER', 'SETTLEPRICE', 'UPDATETIME'],
+    data: [['GDZ6', 0, 4400, 4402, 4428.2, '18:37:29']] } });
+  assert.strictEqual(rates.parseLast(noLast).price, 4401);
+  const only = JSON.stringify({ marketdata: {
+    columns: ['SECID', 'LAST', 'BID', 'OFFER', 'SETTLEPRICE', 'UPDATETIME'],
+    data: [['GDZ6', 0, 0, 0, 4428.2, '18:37:29']] } });
+  assert.strictEqual(rates.parseLast(only).price, 4428.2);
+  assert.strictEqual(rates.parseLast('{}'), null);
+  assert.strictEqual(rates.parseLast('not json'), null);
+});
+
+test('fetchLast — asks for one contract', async () => {
+  const seen = [];
+  const get = async (url) => { seen.push(url); return mdFeed; };
+  const r = await rates.fetchLast({ get, secid: 'GDZ6' });
+  assert.strictEqual(r.price, 4429.1);
+  assert.match(seen[0], /securities\/GDZ6\.json/);
+});

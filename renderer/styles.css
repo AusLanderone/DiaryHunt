@@ -660,6 +660,19 @@ canvas { display: block; width: 100%; }
 }
 .auto-toggle input { accent-color: var(--accent); cursor: pointer; }
 
+/* the header badge that says the diary is catching up on the variation margin */
+.clearing-badge {
+  display: inline-flex; align-items: center;
+  padding: 5px 10px; margin-right: 8px;
+  border: 1px solid var(--line); border-radius: 999px;
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+  white-space: nowrap;
+}
+.clearing-badge[hidden] { display: none; }
+.clearing-badge.busy { color: var(--accent); border-color: var(--accent); }
+.clearing-badge.ok { color: var(--pos); border-color: var(--pos); }
+.clearing-badge.warn { color: var(--neg); border-color: var(--neg); cursor: help; }
+
 /* a leg in execution mode hides its plain price fields: the modal's own
    `display: flex` on a label otherwise beats the [hidden] attribute */
 .modal label[hidden] { display: none !important; }

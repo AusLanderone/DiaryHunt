@@ -24,6 +24,9 @@ const SETTINGS_DEFAULTS = {
   font: 'system',   // system | grotesk | rounded | serif
   theme: 'default', // default | emerald | ocean | violet | light
   scale: 1,         // UI zoom factor
+  // The variation margin of a MOEX leg is the exchange's own arithmetic, not a
+  // preference: the diary works it out by itself unless it is told not to.
+  clearingAuto: true,
 };
 
 function createConfig({ dataDir }) {

@@ -87,5 +87,42 @@ async function applySavedSettings() {
   } catch { /* defaults */ }
 }
 
+// ---------- the variation margin catches itself up ----------
+//
+// Nothing to press: on startup the diary looks for closed MOEX legs whose
+// roubles it has not worked out yet — restored from a backup, entered offline,
+// or closed before MOEX published the session — and computes them. What fails
+// stays in the queue for the next start.
+const clearingBadge = document.getElementById('clearing-badge');
+
+function showClearing(text, cls) {
+  clearingBadge.hidden = !text;
+  clearingBadge.className = 'clearing-badge' + (cls ? ' ' + cls : '');
+  clearingBadge.textContent = text || '';
+}
+
+async function catchUpClearing() {
+  if (window.api.env && window.api.env.e2e) return;      // tests do not call the exchange
+  const settings = window.appSettings || await window.api.config.getSettings();
+  if (settings.clearingAuto === false) return;
+  const todo = window.clearingQueue.pending(trades);
+  if (!todo.length) return;
+  showClearing(`считаю вариационку · 0 / ${todo.length}`, 'busy');
+  const res = await window.clearing.runClearing(trades, ({ total, done }) => {
+    showClearing(`считаю вариационку · ${done} / ${total}`, 'busy');
+  });
+  await refresh();
+  if (res.failed.length) {
+    showClearing(`вариационка: ${res.done} из ${res.total}`, 'warn');
+    clearingBadge.title = 'Не вышло посчитать:\n' + res.failed.join('\n')
+      + '\n\nСделку, закрытую сегодня, MOEX публикует только после вечернего клиринга — она посчитается при следующем запуске.';
+    setTimeout(() => showClearing(''), 30000);
+  } else {
+    showClearing(`вариационка посчитана: ${res.done}`, 'ok');
+    clearingBadge.title = '';
+    setTimeout(() => showClearing(''), 6000);
+  }
+}
+
 applySavedSettings();
-refresh();
+refresh().then(catchUpClearing).catch(() => {});

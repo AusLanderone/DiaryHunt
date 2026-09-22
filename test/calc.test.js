@@ -105,6 +105,27 @@ test('estimatePayout: MOEX-loss leg rebates other legs profit (positive)', () =>
   near(calc.estimatePayout(payLoss, 0.06), 0.06 * 440 * 84.95, 0.5); // ≈ +2242.7
 });
 
+test('estimatePayout: MOEX and FOREX both in profit — taxed on MOEX AND rebated on FOREX', () => {
+  // the tax is levied on what MOEX made; the +6% comes from moving the FOREX
+  // profit into roubles — the two are independent and can both happen
+  const both = { usdRub: 80, legs: [
+    { exchange: 'MOEX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 110 },   // +100 $
+    { exchange: 'FOREX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 130 },  // +300 $
+  ] };
+  near(calc.estimatePayout(both, 0.06), -0.06 * 100 * 80 + 0.06 * 300 * 80, 1e-6);
+});
+
+test('estimatePayout: the rebate is on the FOREX side net, not on its winning legs alone', () => {
+  const t = { usdRub: 80, legs: [
+    { exchange: 'MOEX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 110 },   // -100 $
+    { exchange: 'FOREX', side: 'Лонг', entryPrice: 100, units: 10, exitPrice: 130 },  // +300 $
+    { exchange: 'FOREX', side: 'Шорт', entryPrice: 100, units: 10, exitPrice: 120 },  // -200 $
+  ] };
+  near(calc.estimatePayout(t, 0.06), 0.06 * 100 * 80, 1e-6);
+  const loss = { usdRub: 80, legs: [t.legs[0], t.legs[2]] };                        // FOREX in loss
+  assert.strictEqual(calc.estimatePayout(loss, 0.06), 0);
+});
+
 test('estimatePayout: null when MOEX leg has no exit', () => {
   const open = { usdRub: 80, legs: [
     { exchange: 'MOEX', side: 'Лонг', entryPrice: 1, units: 1, exitPrice: null },

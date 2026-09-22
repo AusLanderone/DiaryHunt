@@ -372,9 +372,11 @@ function isClosed(trade) {
 // Both branches read the legs' ROUBLE figures — the broker's fact when the leg
 // carries one — because the tax is levied on the roubles the exchange credited,
 // not on a dollar move converted at the trade's rate.
-// - MOEX leg in profit  -> taxed: payout = -rate * (MOEX leg ₽)
-// - MOEX leg in loss    -> rebate on transferring the other legs' profit back to
-//                          MOEX: payout = +rate * (other legs' profit ₽)
+// The two parts are independent and a trade can carry both:
+// - MOEX in profit  -> taxed on the closed trade: -rate * (MOEX legs ₽)
+// - FOREX in profit -> moving that profit into roubles on MOEX pays +rate on
+//                      top: +rate * (the other legs' net ₽)
+// A side in loss adds nothing.
 function estimatePayout(trade, rate) {
   const moexLegs = trade.legs.filter((l) => l.exchange === 'MOEX');
   if (!moexLegs.length) return null;
@@ -386,11 +388,12 @@ function estimatePayout(trade, rate) {
     if (one === null) return null;
     g += one;
   }
-  if (g > 0) return -rate * g;
-  const otherProfit = trade.legs
+  const tax = g > 0 ? -rate * g : 0;
+  // what arrives on the other account is its net result, not its winning legs
+  const other = trade.legs
     .filter((l) => l.exchange !== 'MOEX')
-    .reduce((s, l) => { const lg = legGrossRub(l, trade.usdRub, trade); return s + (lg && lg > 0 ? lg : 0); }, 0);
-  return rate * otherProfit;
+    .reduce((s, l) => s + (legGrossRub(l, trade.usdRub, trade) || 0), 0);
+  return tax + (other > 0 ? rate * other : 0);
 }
 
 function computeTrade(trade) {
